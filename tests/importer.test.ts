@@ -59,7 +59,7 @@ test('different papers with colliding names never merge folders', async () => {
 test('same key from a different Zotero database stops rather than creating an accidental duplicate', async () => {
   const s = new MemoryStore(), i = new Importer(s);
   await i.import(paper, settings, naming, [pdf]);
-  await assert.rejects(i.import({ ...paper, serverId: 'different' }, settings, naming, [pdf]), /another Zotero/);
+  await assert.rejects(i.import({ ...paper, serverId: 'different' }, settings, naming, [pdf]), /別のZotero/);
 });
 test('refresh preserves personal notes while updating metadata and PDF', async () => {
   const s = new MemoryStore(), i = new Importer(s);
@@ -77,7 +77,7 @@ test('locally annotated PDF stops refresh before any write', async () => {
   const s = new MemoryStore(), i = new Importer(s);
   const first = await i.import(paper, settings, naming, [pdf]);
   const edited = Buffer.from('%PDF-1.7\niPad handwriting'); s.files.set('Research/My Papers/METHOD/本文.pdf', edited);
-  await assert.rejects(i.update((await s.records())[0], paper, settings, [pdf]), /edited/);
+  await assert.rejects(i.update((await s.records())[0], paper, settings, [pdf]), /編集/);
   assert.equal(s.backups, 0); assert.deepEqual(s.files.get('Research/My Papers/METHOD/本文.pdf'), edited);
   assert.ok(await s.exists(first.path));
 });

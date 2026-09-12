@@ -1,0 +1,27 @@
+Zotero Paper Import 0.1.1 日本語版
+
+【このフォルダの入れ方】
+
+1. Obsidianで、使いたい保管庫を開きます。
+2. 設定 → コミュニティプラグインを開きます。
+3. 「インストールされたプラグイン」付近のフォルダアイコンを押します。
+4. Finderで plugins フォルダが開きます。
+5. この説明書が入っている zotero-paper-import フォルダを、丸ごとそこへコピーします。
+6. Obsidianに戻って円形の矢印「プラグインの再読み込み」を押します。
+   一覧に出なければ、Obsidianを終了（Macでは⌘Q）して起動し直します。
+7. Zotero Paper Importのスイッチをオンにします。
+
+正しい配置：plugins / zotero-paper-import / main.js
+
+フォルダアイコンはZIPを読み込む画面ではなく、保存場所を開くボタンです。
+Obsidianの設定画面へZIPやフォルダをドラッグしてもインストールされません。
+
+【既に入れている人の更新方法】
+
+プラグインをオフにし、このフォルダ内の main.js、manifest.json、styles.css
+の3ファイルを既存の zotero-paper-import フォルダ内へコピーして置き換えます。
+既存フォルダ全体は削除せず、data.jsonやbackupsは残してください。
+コピー後、再読み込みしてスイッチをオンにします。
+
+詳しい手順：
+https://github.com/edoaki/zotero-paper-import#macでの入れ方

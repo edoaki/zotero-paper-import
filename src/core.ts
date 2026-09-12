@@ -15,10 +15,10 @@ export const DEFAULT_TEMPLATE = `# {{title}}
 ## PDF
 {{pdf_links}}
 
-## Abstract
+## 要旨
 {{abstract}}
 
-## Naming
+## 命名の根拠
 {{naming_reason}}
 `;
 export const DEFAULT_SETTINGS: Settings = {
@@ -26,7 +26,7 @@ export const DEFAULT_SETTINGS: Settings = {
   timeoutSeconds: 180, fallback: 'author-year', rules: [], activeRule: '',
   template: DEFAULT_TEMPLATE, port: 23119,
 };
-export const METHOD_RULE = `Use the proper name or acronym of the method, model, or training procedure newly proposed by THIS paper. Do not use a baseline, an existing model merely used by the paper, a dataset, a problem name, or "Ours". Inspect the supplied paper text, including experiments and tables. Only use a name supported by explicit evidence of authorship/contribution. If the evidence is insufficient, return name=null. Never invent an acronym.`;
+export const METHOD_RULE = `この論文が新しく提案する手法・モデル・学習法の固有名または略称を使ってください。比較対象の手法、単に利用している既存モデル、データセット、問題の名前、「Ours」は採用しません。本文・実験・表にある記述も確認し、この論文の提案だと裏付けられる名前だけを採用してください。確認できない場合は name=null とし、略称を作らないでください。判断理由は日本語で、根拠の引用は原文のまま返してください。`;
 export interface ZoteroItem {
   key: string; version?: number; library?: { type: string; id: number; name?: string };
   data: { key?: string; itemType?: string; title?: string; date?: string;
@@ -55,7 +55,7 @@ export function safeName(value: string): string {
 export function validateFolder(value: string): string {
   const p = value.trim().replace(/\\/g, '/').replace(/\/$/, '');
   if (!p || p.startsWith('/') || /^[A-Za-z]:/.test(p) || p.split('/').some(x => !x || x.startsWith('.') || /[\x00-\x1f:*?"<>|]/.test(x))) {
-    throw new Error('Choose a visible folder inside the vault / 保管庫内のフォルダを指定してください。');
+    throw new Error('保管庫内のフォルダを指定してください。');
   }
   return p;
 }
@@ -77,22 +77,22 @@ export function checkedUrl(url: string): string {
   catch { return ''; }
 }
 export function authorsOf(item: ZoteroItem): string {
-  return (item.data.creators || []).filter(c => c.creatorType === 'author').map(c => c.name || [c.firstName, c.lastName].filter(Boolean).join(' ')).join(', ') || 'Unknown / 未確認';
+  return (item.data.creators || []).filter(c => c.creatorType === 'author').map(c => c.name || [c.firstName, c.lastName].filter(Boolean).join(' ')).join(', ') || '未確認';
 }
 export function plain(value: string): string { return value.replace(/<[^>]*>/g, '').replace(/<!--\s*zpi:/g, ''); }
 export function renderGenerated(paper: Paper, record: RecordData, template: string): string {
-  if (template.includes(START) || template.includes(END)) throw new Error('Template must not contain zpi managed markers.');
+  if (template.includes(START) || template.includes(END)) throw new Error('テンプレートには自動生成領域の開始・終了マーカーを含めないでください。');
   const item = paper.item;
   const links = [`[Zotero](zotero://select/${paper.library === 'users/0' ? 'library' : paper.library}/items/${item.key})`];
   const doi = checkedUrl(item.data.DOI ? 'https://doi.org/' + item.data.DOI : '');
   const source = checkedUrl(item.data.url || '');
   if (doi) links.push(`[DOI](${doi})`);
-  if (source) links.push(`[Original / 原文](${source})`);
+  if (source) links.push(`[原文](${source})`);
   const pdfLinks = record.attachments.map(a => `[${a.filename}](./${encodeURIComponent(a.filename)})`).join('\n');
   const values: Record<string, string> = {
-    title: plain(item.data.title || 'Untitled').replace(/[\r\n]+/g, ' '), authors: authorsOf(item), year: yearOf(item),
-    abstract: plain(item.data.abstractNote || 'Not available / 未取得'), source_links: links.join(' · '),
-    pdf_links: pdfLinks || 'PDF not downloaded / PDF未取得', naming_reason: record.naming.reason,
+    title: plain(item.data.title || 'タイトル未設定').replace(/[\r\n]+/g, ' '), authors: authorsOf(item), year: yearOf(item),
+    abstract: plain(item.data.abstractNote || '未取得'), source_links: links.join(' · '),
+    pdf_links: pdfLinks || 'PDF未取得', naming_reason: record.naming.reason,
   };
   let body = template.replace(/\{\{([a-z_]+)\}\}/g, (match, key: string) => values[key] ?? match).trim();
   // User templates may omit these fields, but the paper must remain identifiable and readable offline.
@@ -102,7 +102,7 @@ export function renderGenerated(paper: Paper, record: RecordData, template: stri
 }
 export function generatedBounds(text: string): [number, number] {
   const a = text.indexOf(START), b = text.indexOf(END);
-  if (a < 0 || b < a || text.indexOf(START, a + START.length) >= 0 || text.indexOf(END, b + END.length) >= 0) throw new Error('Generated markers are missing or duplicated. Keep the note and repair its markers before updating / 更新領域が不正です。');
+  if (a < 0 || b < a || text.indexOf(START, a + START.length) >= 0 || text.indexOf(END, b + END.length) >= 0) throw new Error('更新領域が不正です。');
   return [a, b + END.length];
 }
 export function replaceGenerated(text: string, generated: string): string {
@@ -110,7 +110,7 @@ export function replaceGenerated(text: string, generated: string): string {
   return text.slice(0, a) + generated + text.slice(b);
 }
 export function initialNote(paper: Paper, record: RecordData, template: string): string {
-  return `---\nzpi: ${JSON.stringify(record)}\nzotero-key: ${JSON.stringify(paper.item.key)}\ncitekey: ${JSON.stringify(record.naming.name)}\npdf-status: ${JSON.stringify(record.pdfStatus)}\n---\n\n` + renderGenerated(paper, record, template) + '\n\n## My notes / 自分のメモ\n\n';
+  return `---\nzpi: ${JSON.stringify(record)}\nzotero-key: ${JSON.stringify(paper.item.key)}\ncitekey: ${JSON.stringify(record.naming.name)}\npdf-status: ${JSON.stringify(record.pdfStatus)}\n---\n\n` + renderGenerated(paper, record, template) + '\n\n## 自分のメモ\n\n';
 }
 export function readRecord(frontmatter: unknown): RecordData | null {
   const value = (frontmatter as { zpi?: unknown } | undefined)?.zpi;
@@ -125,7 +125,7 @@ export function readRecord(frontmatter: unknown): RecordData | null {
 export function parseAI(text: string): { name: string | null; reason: string; evidence: string } {
   const stripped = text.trim().replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
   const result = JSON.parse(stripped) as Record<string, unknown>;
-  if (!(result.name === null || typeof result.name === 'string') || typeof result.reason !== 'string' || typeof result.evidence !== 'string') throw new Error('AI returned an invalid naming result.');
-  if (result.name !== null && (!result.name.trim() || result.name.length > 200 || !result.evidence.trim())) throw new Error('AI did not provide evidence for the proposed name.');
+  if (!(result.name === null || typeof result.name === 'string') || typeof result.reason !== 'string' || typeof result.evidence !== 'string') throw new Error('AIの返答を命名結果として読み取れませんでした。');
+  if (result.name !== null && (!result.name.trim() || result.name.length > 200 || !result.evidence.trim())) throw new Error('AIが名前の根拠を示さなかったため、採用しませんでした。');
   return { name: result.name === null ? null : safeName(result.name), reason: result.reason.slice(0, 4000), evidence: result.evidence.slice(0, 4000) };
 }

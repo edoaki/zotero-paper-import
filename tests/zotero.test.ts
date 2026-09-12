@@ -20,7 +20,7 @@ test('connection distinguishes disabled API and incompatible version; validates 
     status = 200; sid = '';
     await assert.rejects(client.probe(), e => e instanceof ConnectionError && e.kind === 'version');
     sid = 'example'; await client.probe(); assert.equal(client.serverId, 'example');
-    sid = 'other'; await assert.rejects(client.get('/users/0/items'), /changed/);
+    sid = 'other'; await assert.rejects(client.get('/users/0/items'), /変わ/);
   } finally { server.close(); }
 });
 test('local transport refuses arbitrary addresses and paths', async () => {

@@ -1,22 +1,10 @@
-# Zotero Paper Import：使い方
+# 詳しい使い方
 
-Obsidianの1コマンドからZoteroの論文を選び、**論文ノートとPDFが入ったフォルダ**を作るプラグインです。
-
-**初期ベータ版 0.1.0。** 最初はテスト用の空の保管庫で試してください。対応条件はZotero 10以降、Obsidian本体・インストーラ1.13.4以降。初期の実機検証対象はmacOSです。
-
-## インストール
-
-1. [GitHub Releases](https://github.com/edoaki/zotero-paper-import/releases)から `zotero-paper-import-0.1.0.zip` をダウンロードします。
-2. 展開された `zotero-paper-import` フォルダを、使いたい保管庫の `.obsidian/plugins/` に入れます。隠しフォルダはMacのFinderで Command＋Shift＋ピリオドで表示できます。
-3. Obsidianの「設定 → コミュニティプラグイン」でZotero Paper Importを有効にします。一覧に出ない場合はObsidianを開き直します。
-4. Zoteroを起動し、「設定 → 詳細」で他のアプリケーションとの通信を許可します。
-5. プラグイン設定の「接続確認」を押し、保管庫内の保存先を選ぶか入力します。未作成のフォルダは取り込み時に作成します。
-
-Python、Obsidian CLI、ZotLit、Better BibTeX、Zotero側の追加プラグイン、Zotero APIキーは不要です。コミュニティプラグインの一覧にはまだ申請していません。
+インストールの手順は [トップページの日本語ガイド](../README.md) をご覧ください。
 
 ## 論文を取り込む
 
-コマンドパレットから「Zotero Paper Import: Zoteroから論文を取り込む」に相当するImportコマンドを実行します。左リボンのダウンロードアイコンでも開けます。
+⌘Pでコマンドパレットを開き、「Zotero Paper Import: Zoteroから論文を取り込む」を選びます。左リボンのダウンロードアイコンでも開けます。
 
 タイトル・著者・年で検索し、論文を選ぶと次の形式で保存されます。
 

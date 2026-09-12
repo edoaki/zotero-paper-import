@@ -1,87 +1,139 @@
 # Zotero Paper Import
 
-Import a paper from Zotero into a vault folder containing a Markdown note and PDF files. Pick a destination, run one Obsidian command, and select a paper. Optional AI naming uses your installed Codex, Claude Code, or OpenCode CLI.
+Zoteroの論文を選ぶと、Obsidianの保管庫に「ノート＋PDF」が入った論文フォルダを作ります。
 
-**Early desktop beta — v0.1.0.** macOS is the initial tested platform. Requires Zotero **10+** and Obsidian **1.13.4+**. The plugin is not submitted to the Obsidian community directory yet.
+## まず、ここからダウンロード
 
-[日本語の使い方](docs/README.ja.md) · [Design](docs/DESIGN.md) · [Testing](docs/TESTING.md)
+### [⬇ インストール用ZIPをダウンロード（日本語版 0.1.1）](https://github.com/edoaki/zotero-paper-import/releases/download/0.1.1/zotero-paper-import-0.1.1.zip)
+
+**上のリンクを押せば、必要なZIPを直接ダウンロードできます。GitHubへのログインは不要です。**
+
+GitHubの緑色の「Code → Download ZIP」や「Source code (zip)」は開発用です。インストールには、必ず上のリンクの `zotero-paper-import-0.1.1.zip` を使ってください。
+
+## Macでの入れ方
+
+### 1. ZIPを展開する
+
+Finderの「ダウンロード」で `zotero-paper-import-0.1.1.zip` をダブルクリックします。
+
+`zotero-paper-import` というフォルダができます。Safariなどで既に展開されている場合は、そのフォルダを使います。
+
+フォルダを開いて、**`main.js` と `manifest.json` と `styles.css` が見えること**を確認してください。
 
 ```text
-Your chosen folder/
-└── smith2025/             # or an AI-verified method name
-    ├── smith2025.md
-    ├── 本文.pdf            # main paper
-    └── 添付-XXXXXXXX.pdf  # optional supplement
+ダウンロード/
+└─ zotero-paper-import/     ← このフォルダごとコピーします
+   ├─ main.js
+   ├─ manifest.json
+   ├─ styles.css
+   └─ INSTALL.txt            ← 日本語の手順
 ```
 
-## Install
+### 2. Obsidianから、入れる場所を開く
 
-1. Download `zotero-paper-import-0.1.0.zip` from [Releases](https://github.com/edoaki/zotero-paper-import/releases).
-2. Extract it. Copy the enclosed `zotero-paper-import` folder into `<your-vault>/.obsidian/plugins/`.
-3. In Obsidian → Settings → Community plugins, enable **Zotero Paper Import**. Reopen Obsidian if it does not appear.
-4. In Zotero → Settings → Advanced, enable **Allow other applications on this computer to communicate with Zotero**. Keep Zotero open.
-5. Open the plugin settings, click **Check connection**, and choose/type a destination inside your vault.
+1. プラグインを使いたい保管庫をObsidianで開きます。
+2. 左下の歯車から「設定 → コミュニティプラグイン」を開きます。
+3. 「インストールされたプラグイン」の見出し付近にある**フォルダのアイコン**を押します。マウスを重ねると「プラグインのフォルダを開く」と出るアイコンです。
+4. **Finderのウィンドウが開きます。ここがコピー先です。**
 
-Start with a separate test vault. No Python, Obsidian CLI, Better BibTeX, ZotLit, Zotero companion add-on, or Zotero API key is required. Node.js is only needed to build from source, not to use the plugin.
+> このアイコンはZIPを選んでインストールするボタンではありません。保存場所をFinderで開くボタンです。Obsidianの設定画面へZIPやフォルダをドラッグしてもインストールされません。
 
-## Use
+### 3. 開いたFinderにフォルダを入れる
 
-- Run **Zotero Paper Import: Import paper from Zotero** (or click the download ribbon icon).
-- Search by title, author, or year. Select a paper. If it has multiple PDFs, select a primary PDF and the attachments to copy.
-- The folder, note, and verified PDF copies are created; the note opens automatically.
-- Selecting the same paper again opens its existing note, even after a move inside the vault.
-- Run **Refresh this paper** from an imported note to update generated metadata and previously selected PDFs. Write personal notes **outside** `<!-- zpi:generated:start -->` and `<!-- zpi:generated:end -->`.
-- Run **Apply naming settings to this paper** to explicitly rename an existing paper using the current rule. New settings do not automatically rename old papers.
+手順1の **`zotero-paper-import` フォルダを丸ごと**、手順2で開いたFinderの `plugins` フォルダにコピーします。
 
-Imports read Zotero only. No records, citation keys, attachments, or original PDFs are changed in Zotero. The `citekey` in the generated note is a local name, not a write-back to Zotero/Better BibTeX.
+入れた後は、この並びになれば正解です。
 
-## Naming
+```text
+plugins/                    ← フォルダアイコンで開いた場所
+├─ copilot/                 ← 既存のプラグインがある場合
+└─ zotero-paper-import/     ← 今回コピーしたフォルダ
+   ├─ main.js
+   ├─ manifest.json
+   └─ styles.css
+```
 
-| Mode | Behavior |
+**`plugins → zotero-paper-import → main.js` の順に開けることを確認してください。**
+
+次の配置は間違いです。
+
+```text
+plugins/main.js                                 × フォルダに入っていない
+plugins/zotero-paper-import/zotero-paper-import/main.js   × 二重になっている
+plugins/zotero-paper-import-main/src/main.ts      × 開発用ZIPを使っている
+```
+
+### 4. 一覧を読み直して、有効にする
+
+1. Obsidianの「設定 → コミュニティプラグイン」に戻ります。
+2. 「インストールされたプラグイン」付近の**円形の矢印アイコン（プラグインの再読み込み）**を押します。
+3. 一覧に **Zotero Paper Import** が出たら、右側のスイッチをオンにします。
+4. 設定の左側に **Zotero Paper Import** が追加されれば完了です。
+
+一覧に出ない場合は、Obsidianをいったん**終了してから起動し直して**ください。Macではウィンドウを閉じるだけでは終了しないため、メニューバーの「Obsidian → Obsidianを終了」（⌘Q）を使います。
+
+制限モードが有効な場合は、「コミュニティプラグインを有効にする」などの案内に沿って解除してから進めます。
+
+## 最初の論文を取り込む
+
+1. Macで**Zotero 10以降**を起動します。
+2. Zoteroの「設定 → 詳細」で、他のアプリケーションと通信することを許可します。
+3. Obsidianの「設定 → Zotero Paper Import」で **接続確認** を押します。
+4. **保存先**に、保管庫内のフォルダ名を入力します。例：`文献`。まだないフォルダでも使えます。
+5. 最初は **命名方式：著者名＋年（AI不要）** のままで試してください。
+6. 設定を閉じ、⌘Pを押して **Zoteroから論文を取り込む** と入力し、そのコマンドを選びます。
+7. 論文を検索して選ぶと、ノートとPDFが保存されます。
+
+```text
+文献/
+└─ smith2025/
+   ├─ smith2025.md
+   └─ 本文.pdf
+```
+
+ノートの「PDF」欄から、保管庫内のPDFを開けます。
+
+## うまくいかないとき
+
+| 状態 | 確認すること |
 | --- | --- |
-| Author + year (default) | No AI. First author surname plus Zotero's publication year. Missing year → `nd`; missing author → `item-<Zotero key>`. |
-| Method name | AI examines metadata and extracted PDF text for the method/model newly proposed by the paper. Evidence is saved in the note. |
-| Custom rule | Save and select plain-language naming rules. Duplicate, export, and import rule files. |
+| ZIPの場所が分からない | このページ上部の「インストール用ZIPをダウンロード」を押してください。 |
+| フォルダアイコンを押したがインストールできない | 開いたFinderがコピー先です。その中へ `zotero-paper-import` フォルダを入れます。 |
+| `main.js` がない | 開発用のZIPをダウンロードした可能性があります。上部の直接リンクから取り直してください。 |
+| コピーしたのに一覧へ出ない | 「プラグインの再読み込み」を押すか、Obsidianを終了して起動し直してください。 |
+| フォルダが二重になっている | `main.js` を直接含む方のフォルダを、`plugins` の直下へ置いてください。 |
+| 有効化に失敗する | Obsidian本体とインストーラが1.13.4以降か確認してください。設定の「Obsidianについて」で確認できます。 |
+| Zoteroにつながらない | Zoteroを起動して、通信許可を有効にします。プラグインの「接続案内」を開くと確認できます。 |
+| PDFを取得できない | Zotero側でそのPDFを開き、ダウンロードを完了してから取り込んでください。 |
 
-AI output is validated and sanitized before use as a folder name. Different papers with the same name receive numeric suffixes. If AI fails or finds no supported name, the default is author + year with the reason recorded. You can instead request manual naming.
+## 既に0.1.0を入れている人へ
 
-## Optional AI setup
+Obsidianでこのプラグインのスイッチをオフにしてから、新しいZIPのフォルダ内にある **`main.js`・`manifest.json`・`styles.css` の3ファイルだけ**を、既存の `plugins/zotero-paper-import/` 内へコピーして置き換えます。
 
-Choose an AI naming mode, select a CLI, and use **Detect** and **Test AI connection**. Install and log in to your chosen CLI in a terminal first. Set a model if needed. CLI executable paths are stored per device, not in synced plugin settings. Authentication stays with the CLI.
+**既存フォルダ全体は削除しないでください。** 設定の `data.json` やバックアップを残したまま更新できます。コピー後に「プラグインの再読み込み」を押すかObsidianを起動し直し、スイッチをオンにします。表示されるバージョンが **0.1.1** なら更新完了です。
 
-| CLI | Integration |
-| --- | --- |
-| Codex | `codex exec`, read-only sandbox, ephemeral run, structured output. Requires a recent CLI supporting `--ignore-user-config`; uses existing authentication but skips personal config/MCP. Specify your model in plugin settings if needed. |
-| Claude Code | Non-interactive structured output; built-in tools and MCP disabled, hooks disabled for the invocation, no session persistence. |
-| OpenCode | Non-interactive JSON output with a dedicated no-tools agent. Experimental; install/authenticate separately. |
+## AIで手法名にしたい場合
 
-An AI invocation runs in a temporary working directory, not in your vault. The plugin sends only the selected paper's metadata, extracted text, and naming instruction. It does not give AI file-writing responsibilities. The invocation directory is removed afterward. CLI-owned configuration, logging, and providers remain governed by that CLI.
+基本の取り込みができたら、設定の **命名方式 → 手法名（AI）** を選びます。使うCLIを選択し、インストール・ログイン済みの状態で「検出」「AI接続テスト」を実行してください。
 
-PDF extraction is bundled. No OCR is performed. At most 200 pages and approximately 180,000 text characters are supplied, with excerpts marked by page. A difficult scan or table can cause fallback or an incorrect AI suggestion; evidence is included so you can check it. AI processing requires whatever network/model access your chosen CLI uses; costs and usage limits apply. The connection test sends a short synthetic prompt and can also consume usage.
+- 対応候補：Codex、Claude Code、OpenCode。
+- 実機で成功を確認済みなのはCodexです。Claude Codeは認証済み環境での確認待ち、OpenCodeは実験的対応です。
+- 自分の命名ルールを文章で登録し、書き出して共有することもできます。
+- AI利用時は書誌情報とPDFの抽出本文を選択したAIへ送信します。料金・利用上限はそのCLIで利用するサービスに従います。
 
-## Offline reading and iPad
+[命名・更新・iPadでの閲覧など、詳しい使い方](docs/README.ja.md)
 
-The plugin runs on desktop. The generated notes and PDFs are ordinary vault files and can be read on iPad **without this plugin**, after your chosen sync service (for example iCloud) downloads them to the device. This plugin does not implement cloud sync or ensure files remain downloaded. Verify by opening the PDF from its note with the iPad offline.
+## この版について
 
-## Updates and safety behavior
+macOS向けの初期ベータ版です。Zotero **10以降**、Obsidian本体・インストーラ **1.13.4以降**が必要です。コミュニティプラグイン一覧には未申請です。
 
-- Missing PDFs are reported; saving only a note is an explicit choice. A later refresh can add the downloaded attachment.
-- For multiple attachments, a failed download stops the PDF set from being saved as a complete import; you may save a note only and retry later.
-- Refresh stops if a vault copy has changed since import, protecting external annotations/handwriting.
-- Refresh backs up the note and existing PDFs to `.obsidian/plugins/zotero-paper-import/backups/` (or your custom configuration directory). These backups are not automatically pruned. Review and remove them manually when no longer needed.
-- Existing tracked attachments are kept if their Zotero counterparts disappear; refresh stops for manual review.
-- Local Zotero database identity is recorded. A different database with the same item key is not silently treated as the same paper. This beta expects imports/refreshes from one Zotero database; multi-desktop database reconciliation is not implemented.
-- Move/rename through Obsidian with automatic link updates enabled. Do not delete `zpi` properties or generated-region markers. Edit personal notes outside the generated region.
+生成物は通常のMarkdownとPDFなので、iCloudなどで同期・ダウンロードが完了すればiPadで読めます。iPadのオフライン実機検証は未実施です。取り込み処理はMacで行います。
 
-## Limits of this beta
+[設計](docs/DESIGN.md) · [検証記録](docs/TESTING.md) · [不具合を報告する](https://github.com/edoaki/zotero-paper-import/issues)
 
-One paper per import; PDF attachments up to 128 MiB each; search shows the newest 100 matches (refine the query for more). Refresh updates previously selected attachments; adding newly attached supplements to an already-imported PDF set is not yet exposed. Windows/Linux packaging is not validated. AI naming via local CLI runs on desktop only. Bibliographic values are taken from Zotero; incorrect Zotero metadata remains incorrect until corrected there. No automatic classification, generated summaries, Zotero write-back, or Zotero annotation extraction.
+## 開発する人向け
 
-## Privacy
-
-Zotero requests use GET against `127.0.0.1` only. PDF file locations come from that local API; the plugin reads those specific files to copy them into the vault. AI naming sends paper content to the provider configured in the selected CLI. No telemetry or analytics. No API keys are requested or stored by this plugin. Shared settings contain destination, template, naming rules, provider/model preferences; device settings contain CLI path and local API port. Backups and notes contain bibliographic data. Treat CLI logs and vault sync according to your own privacy settings.
-
-## Build
+開発用にNode.js 22以降を用意し、次を実行します。プラグインを使うだけなら、この作業は不要です。
 
 ```sh
 npm ci
@@ -89,8 +141,6 @@ npm run check
 npm run package
 ```
 
-Requires a current Node.js 22+ development environment. Build output is in `dist/`, the distributable ZIP in `release/`. Develop in a dedicated test vault. See [testing notes](docs/TESTING.md) for what has actually been checked.
+実行用ファイルは `dist/`、インストール用ZIPは `release/` に生成されます。
 
-## License and credits
-
-MIT © 2026 edoaki. PDF text extraction bundles Mozilla PDF.js (`pdfjs-dist`), Apache-2.0; its license is included in `THIRD-PARTY-LICENSES.txt`. This is an independent project, not an official Zotero or Obsidian product.
+ライセンス：MIT © 2026 edoaki。PDF本文の抽出にはMozilla PDF.js（Apache-2.0）を同梱しています。ライセンス全文は `THIRD-PARTY-LICENSES.txt` にあります。Zotero・Obsidianの公式製品ではありません。

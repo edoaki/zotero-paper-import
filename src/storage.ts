@@ -4,9 +4,9 @@ import { readRecord, replaceGenerated, type RecordData } from './core';
 
 export function frontmatter(text: string): { values: Record<string, unknown>; end: number } {
   const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
-  if (!m) throw new Error('Missing frontmatter / ノートのプロパティがありません');
+  if (!m) throw new Error('ノートのプロパティがありません');
   const values = parseYaml(m[1]);
-  if (!values || typeof values !== 'object' || Array.isArray(values)) throw new Error('Invalid frontmatter');
+  if (!values || typeof values !== 'object' || Array.isArray(values)) throw new Error('ノートのプロパティ形式が不正です。');
   return { values, end: m[0].length };
 }
 export class VaultStorage implements Storage {
@@ -33,7 +33,7 @@ export class VaultStorage implements Storage {
     for (const part of path.split('/')) {
       current = current ? current + '/' + part : part;
       const entry = this.app.vault.getAbstractFileByPath(current);
-      if (entry && !(entry instanceof TFolder)) throw new Error('A file occupies the destination folder');
+      if (entry && !(entry instanceof TFolder)) throw new Error('指定したフォルダ名と同名のファイルがあります。別の保存先を指定してください。');
       if (!entry) await this.app.vault.createFolder(current);
     }
   }
@@ -43,7 +43,7 @@ export class VaultStorage implements Storage {
   async readBinary(path: string): Promise<Uint8Array> { return new Uint8Array(await this.app.vault.adapter.readBinary(path)); }
   async writeBinary(path: string, bytes: Uint8Array): Promise<void> {
     const file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof TFile)) throw new Error('PDF missing from vault index');
+    if (!(file instanceof TFile)) throw new Error('保管庫でPDFが見つかりません。ファイル一覧を確認してください。');
     await this.app.vault.modifyBinary(file, Uint8Array.from(bytes).buffer);
   }
   async removeCreated(path: string): Promise<void> {
@@ -52,9 +52,9 @@ export class VaultStorage implements Storage {
   }
   async updateNote(note: StoredNote, record: RecordData, generated: string): Promise<void> {
     const file = this.app.vault.getAbstractFileByPath(note.path);
-    if (!(file instanceof TFile)) throw new Error('Note was moved or deleted during update');
+    if (!(file instanceof TFile)) throw new Error('更新中にノートが移動または削除されたため停止しました。');
     await this.app.vault.process(file, text => {
-      if (text !== note.text) throw new Error('Note changed during update; your edits were kept / 更新中にノートが変更されたため、編集内容を保持して停止しました。');
+      if (text !== note.text) throw new Error('更新中にノートが変更されたため、編集内容を保持して停止しました。');
       const replaced = replaceGenerated(text, generated);
       const { values, end } = frontmatter(replaced);
       values.zpi = record; values['pdf-status'] = record.pdfStatus; values.citekey = record.naming.name;

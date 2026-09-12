@@ -8,8 +8,8 @@ test('CLI runner sends text as stdin and never interprets shell expressions', as
   assert.equal(result, text);
 });
 test('CLI runner times out and supports cancellation', async () => {
-  await assert.rejects(runProcess(process.execPath, ['-e', 'setInterval(()=>{},1000)'], '', tmpdir(), 50), /timed out/);
+  await assert.rejects(runProcess(process.execPath, ['-e', 'setInterval(()=>{},1000)'], '', tmpdir(), 50), /時間切れ/);
   const controller = new AbortController();
   const p = runProcess(process.execPath, ['-e', 'setInterval(()=>{},1000)'], '', tmpdir(), 5000, controller.signal);
-  controller.abort(); await assert.rejects(p, /Cancelled/);
+  controller.abort(); await assert.rejects(p, /キャンセル/);
 });

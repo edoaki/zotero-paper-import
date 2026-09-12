@@ -1,29 +1,33 @@
-# Design
+# 機能の設計
 
-The core operation is one desktop Obsidian command: search a local Zotero library, choose a paper and its PDF attachments, determine its name, and save a per-paper directory containing an identically named Markdown note and locally readable PDF copies.
+Obsidianの1コマンドからZoteroの論文を検索・選択し、指定先へ「論文名のフォルダ／同名のノート／本文PDF」を保存します。AI命名は任意です。
 
-## Boundaries
+## 接続と保存
 
-- Local Zotero API over HTTP loopback only; all requests are GET.
-- Zotero 10+ supplies a database server identifier. Local paper identity is `(server ID, library route, item key)`; filenames are mutable labels. Cross-database reconciliation is deliberately not automatic.
-- Vault APIs own file creation and link-aware renames. The configurable destination applies to new imports. Existing imported notes are located throughout the vault, including manually moved notes.
-- The plugin owns PDF copying, output validation, deduplication and note generation. AI returns a proposed name and evidence; it does not manage files.
-- No external Python scripts, Obsidian CLI, ZotLit or Zotero add-on is needed at runtime. Optional AI CLIs remain separately installed and authenticated by the user.
+起動中のZotero 10以降へ、このコンピューター内だけで使えるローカルAPIから接続します。Zoteroへの問い合わせは読み取り専用です。データベースの場所やAPIキーを入力する必要はありません。
 
-## Storage
+文献の同一性は、Zoteroのデータベース識別子・ライブラリ・アイテムキーで確認します。保管庫内で移動・改名された既存ノートも再利用します。別のデータベースとの対応付けは自動で行いません。
 
-The Markdown note holds a `zpi` frontmatter record with the database/library/item identity, tracked attachment keys/filenames/hashes, naming decision and last update. This travels with the note through vault moves and sync. The note's `citekey` is a vault-local label. Generated content is bounded by explicit markers; personal writing lives outside them.
+保存先は設定で選べます。ノート名は論文フォルダ名と揃え、本文は `本文.pdf`、補足資料は添付キーを含む別名で保存します。PDFの実体と保存後のハッシュを検証します。
 
-The first selected PDF is `本文.pdf`, further attachments are `添付-<attachment-key>.pdf`. PDFs are validated for a PDF header and SHA-256 verified after writing. Updating an externally edited copy is refused. Updates retain backups under the plugin's vault configuration directory. Settings contain no credentials; the executable path and local port are per-device local storage.
+## 命名
 
-## Naming
+標準は第一著者の姓＋出版年です。AIを使う場合は、標準の「手法名」ルールか、利用者が文章で登録したルールを選べます。
 
-Default: first author surname + publication year. AI modes: built-in method-name rule or saved custom prompt. Paper text is extracted by bundled PDF.js. AI results must provide a name (or null), reason and evidence. Folder names are normalized, invalid path characters removed, Windows device names avoided, UTF-8 byte length bounded, and collisions receive suffixes.
+PDFの抽出処理はプラグインに同梱します。AIは名前と根拠を返し、プラグインが名前を検証してファイルを保存します。AIに保管庫の編集を任せません。名前が衝突する場合は連番を追加します。
 
-## UI
+AI命名ではCodex、Claude Code、OpenCodeのCLIを利用できます。利用者が別途インストールと認証を済ませます。CLIの実行ファイルの場所は端末ごとに保存し、認証情報はプラグインで保持しません。
 
-The setup guide checks connection and gives actionable errors. The paper picker supports library selection and debounced title/author/year search, with bounded concurrent attachment checks. A progress modal supports cancellation during retrieval/AI. Once committing files starts, the short commit is allowed to finish to avoid partial cancellation. Naming changes only affect new imports unless an explicit rename command is run.
+## 更新とメモの保持
 
-## Initial release scope
+ノートの `zpi` プロパティに取り込み元・添付ファイル・命名の根拠・検証情報を保存します。ノート名とは別の情報で対応を維持します。
 
-macOS desktop validation; generated files can be synced and read on iPad. No classification, summaries, automatic background sync, citation-key write-back, or annotation editor. OpenCode adapter is experimental until tested against an authenticated installation. The project is distributed through GitHub Releases, without community-directory submission.
+自動生成する本文には開始・終了マーカーを付け、その外側の利用者のメモは更新で上書きしません。更新前のノートとPDFをバックアップします。保管庫側のPDFが編集されていた場合は停止します。
+
+設定変更だけでは既存論文を改名しません。現在の設定を既存ノートへ適用する場合は、専用の改名コマンドを実行します。
+
+## 配布
+
+GitHubのリリースでインストール用ZIPを配布します。READMEの先頭からZIPへ直接リンクし、展開後のフォルダをFinderでどこに入れるか、コピー後に一覧を再読み込みする方法を案内します。
+
+設定画面・コマンド・利用者向けの説明は日本語です。生成物は普通のMarkdownとPDFなので、同期・ダウンロード後はiPadでこのプラグインなしに読めます。取り込みとAI命名の初期実機対象はMacです。

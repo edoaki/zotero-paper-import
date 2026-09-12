@@ -22,15 +22,15 @@ export class Importer {
   async find(paper: Paper): Promise<StoredNote | undefined> {
     const notes = await this.storage.records();
     const matches = notes.filter(n => recordMatches(n.record, paper));
-    if (matches.length > 1) throw new Error('Duplicate Zotero identity. Keep both notes and resolve the duplicate first / 同一文献のノートが複数あります。');
-    if (!matches.length && notes.some(n => n.record.key === paper.item.key && n.record.library === paper.library && n.record.serverId !== paper.serverId)) throw new Error('This paper key belongs to another Zotero database in this vault. Verify the source before importing / 別のZotero接続元に同じキーがあります。');
+    if (matches.length > 1) throw new Error('同一文献のノートが複数あります。');
+    if (!matches.length && notes.some(n => n.record.key === paper.item.key && n.record.library === paper.library && n.record.serverId !== paper.serverId)) throw new Error('別のZotero接続元に同じキーがあります。');
     return matches[0];
   }
   async import(paper: Paper, settings: Settings, name: NameResult, pdfs: PDFInput[], missingReason = ''): Promise<{ path: string; existing: boolean }> {
     const existing = await this.find(paper);
     if (existing) return { path: existing.path, existing: true };
     const base = validateFolder(settings.folder);
-    for (const pdf of pdfs) if (!isPDF(pdf.bytes)) throw new Error('Invalid PDF bytes');
+    for (const pdf of pdfs) if (!isPDF(pdf.bytes)) throw new Error('取得したデータがPDFではありません。Zoteroの添付を確認してください。');
     await this.storage.mkdir(base);
     const names = new Set((await this.storage.children(base)).map(n => n.toLocaleLowerCase()));
     const root = safeName(name.name || authorYear(paper.item));
@@ -38,13 +38,13 @@ export class Importer {
     while (names.has(folderName.toLocaleLowerCase())) folderName = `${root}-${suffix++}`;
     const folder = `${base}/${folderName}`;
     // createFolder is exclusive: a concurrent import must fail rather than merge papers.
-    if (await this.storage.exists(folder)) throw new Error('Destination appeared during import. Retry.');
+    if (await this.storage.exists(folder)) throw new Error('取り込み中に同名の保存先が作成されました。もう一度実行してください。');
     await this.storage.reserveFolder(folder);
     const record: RecordData = {
       schema: 1, library: paper.library, key: paper.item.key, serverId: paper.serverId,
       attachments: pdfs.map((p, i) => ({ key: p.key, filename: i === 0 ? '本文.pdf' : `添付-${p.key}.pdf`, sha256: sha256(p.bytes) })),
       naming: { ...name, name: folderName }, updated: new Date().toISOString(),
-      pdfStatus: pdfs.length ? 'stored' : `not-downloaded: ${missingReason || 'No stored PDF'}`,
+      pdfStatus: pdfs.length ? 'stored' : `not-downloaded: ${missingReason || '保存済みのPDFがありません'}`,
     };
     const created: { path: string; hash: string }[] = [];
     const notePath = `${folder}/${folderName}.md`;
@@ -53,7 +53,7 @@ export class Importer {
         const path = `${folder}/${record.attachments[i].filename}`;
         await this.storage.createBinary(path, pdfs[i].bytes);
         created.push({ path, hash: record.attachments[i].sha256 });
-        if (sha256(await this.storage.readBinary(path)) !== record.attachments[i].sha256) throw new Error('PDF verification failed');
+        if (sha256(await this.storage.readBinary(path)) !== record.attachments[i].sha256) throw new Error('保存したPDFを検証できませんでした。保存先の空き容量を確認してください。');
       }
       await this.storage.createText(notePath, initialNote(paper, record, settings.template));
       return { path: notePath, existing: false };
@@ -64,7 +64,7 @@ export class Importer {
     }
   }
   async update(note: StoredNote, paper: Paper, settings: Settings, pdfs: PDFInput[], name?: NameResult): Promise<void> {
-    if (!recordMatches(note.record, paper)) throw new Error('Wrong paper for note');
+    if (!recordMatches(note.record, paper)) throw new Error('ノートと取り込み元の論文が一致しないため停止しました。');
     const folder = note.path.slice(0, note.path.lastIndexOf('/'));
     const prior: { filename: string; bytes: Uint8Array }[] = [];
     // Preserve tracked attachments even if they are no longer attached in Zotero.
@@ -73,17 +73,17 @@ export class Importer {
       const path = `${folder}/${a.filename}`;
       if (await this.storage.exists(path)) {
         const bytes = await this.storage.readBinary(path);
-        if (sha256(bytes) !== a.sha256) throw new Error(`Vault PDF was edited; not overwritten: ${a.filename} / 保管庫側で編集されたPDFを検出したため、更新を中止しました。`);
+        if (sha256(bytes) !== a.sha256) throw new Error(`保管庫側の「${a.filename}」が編集されているため、上書きせず更新を中止しました。`);
         prior.push({ filename: a.filename, bytes });
       }
     }
     for (const p of pdfs) {
-      if (!isPDF(p.bytes)) throw new Error('Invalid PDF');
+      if (!isPDF(p.bytes)) throw new Error('取得したデータがPDFではありません。');
       const known = attachments.find(a => a.key === p.key);
       if (known) known.sha256 = sha256(p.bytes);
       else {
         const filename = attachments.length ? `添付-${p.key}.pdf` : '本文.pdf';
-        if (await this.storage.exists(`${folder}/${filename}`)) throw new Error('Untracked PDF already exists. Keep it and choose a different location.');
+        if (await this.storage.exists(`${folder}/${filename}`)) throw new Error('保存先に、このプラグインで管理していない同名のPDFがあります。既存ファイルを保持して停止しました。');
         attachments.push({ key: p.key, filename, sha256: sha256(p.bytes) });
       }
     }
@@ -96,7 +96,7 @@ export class Importer {
       const path = `${folder}/${a.filename}`;
       const old = note.record.attachments.find(x => x.key === p.key);
       if (await this.storage.exists(path)) {
-        if (!old || sha256(await this.storage.readBinary(path)) !== old.sha256) throw new Error('PDF changed while updating; backup kept / 更新中にPDFが変更されました。バックアップを保持しています。');
+        if (!old || sha256(await this.storage.readBinary(path)) !== old.sha256) throw new Error('更新中にPDFが変更されました。バックアップを保持しています。');
         if (old.sha256 !== a.sha256) {
           changed.push({ path, hash: a.sha256, previous: prior.find(x => x.filename === a.filename)?.bytes });
           await this.storage.writeBinary(path, p.bytes);
@@ -105,7 +105,7 @@ export class Importer {
         await this.storage.createBinary(path, p.bytes);
         changed.push({ path, hash: a.sha256 });
       }
-      if (sha256(await this.storage.readBinary(path)) !== a.sha256) throw new Error('PDF verification failed. Backup kept.');
+      if (sha256(await this.storage.readBinary(path)) !== a.sha256) throw new Error('PDFの保存を検証できませんでした。バックアップを保持しています。');
     }
     await this.storage.updateNote(note, record, generated);
     } catch (e) {
