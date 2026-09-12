@@ -45,6 +45,7 @@
 .zpi-cli-setup { border: 1px solid var(--background-modifier-border); border-radius: 8px; padding: 12px; margin: 12px 0; min-width: 0; }
 .zpi-cli-setup[data-state="found"] > .setting-item .setting-item-name { color: var(--text-success); }
 .zpi-cli-setup[data-state="missing"] > .setting-item .setting-item-name { color: var(--text-warning); }
+.zpi-cli-setup:not([data-state="missing"]) .zpi-cli-retry { display: none; }
 .zpi-cli-setup .setting-item { flex-wrap: wrap; gap: 8px; }
 .zpi-cli-setup .setting-item-info, .zpi-cli-setup .setting-item-control { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 .zpi-cli-setup .setting-item-description { white-space: pre-wrap; }
