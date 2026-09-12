@@ -12,13 +12,14 @@ export function frontmatter(text: string): { values: Record<string, unknown>; en
 }
 export class VaultStorage implements Storage {
   constructor(private app: App, private pluginId: string) {}
-  async importedPapers(folder: string): Promise<ImportedPapers> {
+  async importedPapers(folder: string | string[]): Promise<ImportedPapers> {
     const index = new ImportedPapers();
+    const roots = Array.isArray(folder) ? folder : [folder];
     for (const file of this.app.vault.getMarkdownFiles()) {
       const cached = this.app.metadataCache.getFileCache(file)?.frontmatter;
       // Managed notes remain identifiable even after a manual move outside the destination.
-      if (!inFolder(file.path, folder) && !cached?.zpi) continue;
-      if (cached && !cached.zpi && !cached['zotero-key']) continue;
+      if (!roots.some(root => inFolder(file.path, root)) && !cached?.zpi) continue;
+      if (cached && !cached.zpi && !cached['zotero-key'] && !['DOI','doi','arxiv','arxiv-id','arxivId','url','URL'].some(key => cached[key])) continue;
       const text = await this.app.vault.cachedRead(file);
       try { index.add(frontmatter(text).values, text); } catch { /* unrelated or broken note */ }
     }

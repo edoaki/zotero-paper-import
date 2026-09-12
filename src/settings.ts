@@ -5,6 +5,7 @@ import { FolderPicker } from './ui';
 import { invokeAI } from './ai';
 import { defaultModels, discoverModels } from './models';
 import { CLISetup } from './cli-setup';
+import { ORGANIZE_RULE } from './organization';
 
 export class ImportSettingsTab extends PluginSettingTab {
   private connectionTimer?: ReturnType<typeof setInterval>;
@@ -27,8 +28,17 @@ export class ImportSettingsTab extends PluginSettingTab {
     this.connection(el);
     new Setting(el).setName('保存先').setDesc('保管庫内のフォルダを選択、または入力。').addText(t => t.setPlaceholder('例：文献').setValue(s.folder).onChange(async v => { s.folder = v; await p.saveSettings(); })).addButton(b => b.setButtonText('選択').onClick(() => new FolderPicker(this.app, path => { s.folder = path; void p.saveSettings(); this.display(); }).open()));
     new Setting(el).setName('命名方式').addDropdown(d => d.addOption('author-year', '著者名＋年（AI不要）').addOption('method', '手法名（AI）').addOption('custom', '自分のルール（AI）').setValue(s.naming).onChange(async v => { s.naming = v as NamingMode; await p.saveSettings(); this.display(); }));
-    if (s.naming !== 'author-year') {
-      el.createEl('p', { cls: 'zpi-disclosure', text: 'AI命名にはCLIのインストール・ログインが必要です。書誌情報とPDFの抽出本文を選択したAIへ送信します。利用料金・制限はそのサービスに従います。' });
+    new Setting(el).setName('整理の設定').setHeading();
+    for (const [key, name, placeholder] of [['organizeRoot', '分類先の親フォルダ', s.folder || '例：文献'], ['organizeInbox', '未整理フォルダ', `${s.organizeRoot || s.folder || '文献'}/未整理`]] as const) {
+      new Setting(el).setName(name).setDesc('空欄の場合は例示の場所を使います。保管庫内のフォルダを選択できます。').addText(t => t.setPlaceholder(placeholder).setValue(s[key]).onChange(async v => { s[key] = v; await p.saveSettings(); })).addButton(b => b.setButtonText('選択').onClick(() => new FolderPicker(this.app, path => { s[key] = path; void p.saveSettings(); this.display(); }).open()));
+    }
+    el.createEl('p', { text: '未整理フォルダ直下の論文フォルダを整理します。分類先の説明は各フォルダの「分類.md」から読み、必要なら新しい分類フォルダと説明を作ります。' });
+    const criteria = el.createEl('details'); criteria.createEl('summary', { text: '分類の判断ルール' });
+    const ruleEditor = new Setting(criteria); ruleEditor.settingEl.addClass('zpi-template-editor');
+    ruleEditor.addTextArea(t => { t.inputEl.rows = 5; t.inputEl.addClass('zpi-template'); t.setValue(s.organizeRule || ORGANIZE_RULE).onChange(async v => { s.organizeRule = v; await p.saveSettings(); }); });
+    {
+      new Setting(el).setName('AIの設定（命名・整理）').setHeading();
+      el.createEl('p', { cls: 'zpi-disclosure', text: 'AIによる命名・整理にはCLIのインストールとログインが必要です。論文ノート・PDFの抽出本文・分類先の説明を選択したAIへ送信します。利用料金・制限はそのサービスに従います。' });
       new Setting(el).setName('使用するAI').addDropdown(d => d.addOption('codex', 'Codex').addOption('claude', 'Claude Code').addOption('opencode', 'OpenCode（実験的対応）').addOption('antigravity', 'Antigravity CLI（実験的対応）').setValue(s.provider).onChange(async v => { s.provider = v as Provider; s.cliPath = ''; s.model = ''; await p.saveSettings(); this.display(); }));
       const cliContainer = el.createDiv();
       const refreshModels = this.models(el);

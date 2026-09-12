@@ -64,3 +64,6 @@
 .zpi-cli-step pre { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; padding: 10px; border-radius: 5px; background: var(--background-secondary); }
 .zpi-cli-step code { white-space: inherit; overflow-wrap: anywhere; }
 .zpi-cli-step .setting-item { border: 0; padding: 0; }
+.zpi-mode-tabs { display: flex; gap: 8px; margin: 0 0 16px; flex-shrink: 0; }
+.zpi-mode-tabs button { flex: 1; }
+.zpi-mode-tabs button[aria-selected="true"] { background: var(--interactive-accent); color: var(--text-on-accent); }

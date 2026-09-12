@@ -36,6 +36,25 @@ test('folder scope includes classifications and respects path boundaries without
   assert.equal(inFolder('Research/Papers-old/Example.md', 'Research/Papers'), false);
   assert.equal(inFolder('Other/Example.md', 'Research/Papers'), false);
 });
+test('keyless paper stubs match arXiv properties across abstract, HTML, PDF and version URLs', () => {
+  const index = new ImportedPapers(); index.add({ title: 'Existing stub', arxiv: '2403.07028', 'pdf-status': 'stored' });
+  for (const url of ['https://arxiv.org/abs/2403.07028', 'https://arxiv.org/html/2403.07028v1', 'https://arxiv.org/pdf/2403.07028v2.pdf']) {
+    assert.equal(index.has({ ...paper, item: { ...paper.item, data: { url } } }), true);
+  }
+  assert.equal(index.has({ ...paper, item: { ...paper.item, data: { DOI: '10.48550/arXiv.2403.07028' } } }), true);
+  assert.equal(index.has({ ...paper, library: 'groups/123', item: { ...paper.item, data: { url: 'https://arxiv.org/abs/2403.07028' } } }), false);
+});
+test('keyless DOI notes match normalized DOI and DOI URLs without title guessing', () => {
+  const index = new ImportedPapers(); index.add({ doi: 'https://doi.org/10.1234/EXAMPLE' });
+  assert.equal(index.has({ ...paper, item: { ...paper.item, data: { DOI: '10.1234/example' } } }), true);
+  assert.equal(index.has({ ...paper, item: { ...paper.item, data: { url: 'https://doi.org/10.1234/example' } } }), true);
+  assert.equal(index.has(paper), false);
+});
+test('body citations and identifiers on already keyed notes do not hide unrelated Zotero records', () => {
+  const index = new ImportedPapers(); index.add({ title: 'Research note' }, 'Cites https://arxiv.org/abs/2403.07028');
+  index.add({ 'zotero-key': 'OTHERKEY', arxiv: '2403.07028' });
+  assert.equal(index.has({ ...paper, item: { ...paper.item, data: { url: 'https://arxiv.org/abs/2403.07028' } } }), false);
+});
 test('fully imported pages do not hide older unimported papers and cancellation stops paging', async () => {
   const calls: number[] = [];
   const result = await unimportedPage(async start => {

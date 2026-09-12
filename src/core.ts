@@ -5,6 +5,7 @@ export interface Settings {
   folder: string; naming: NamingMode; provider: Provider; cliPath: string;
   model: string; timeoutSeconds: number;
   rules: Rule[]; activeRule: string; template: string; port: number;
+  organizeInbox: string; organizeRoot: string; organizeRule: string;
 }
 export const DEFAULT_TEMPLATE = `# {{title}}
 
@@ -25,6 +26,7 @@ export const DEFAULT_SETTINGS: Settings = {
   folder: '', naming: 'author-year', provider: 'codex', cliPath: '', model: '',
   timeoutSeconds: 180, rules: [], activeRule: '',
   template: DEFAULT_TEMPLATE, port: 23119,
+  organizeInbox: '', organizeRoot: '', organizeRule: '',
 };
 export function migrateAISettings(settings: Settings): Settings {
   if ((settings as { provider: string }).provider !== 'gemini') return settings;

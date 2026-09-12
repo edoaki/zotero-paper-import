@@ -5,6 +5,13 @@ import { JOB_LABELS, type SerialQueue, type QueueJob } from './queue';
 import { unimportedPage, type ImportedPapers } from './imported';
 
 type QueueView = Pick<SerialQueue<unknown>, 'jobs' | 'subscribe' | 'latest'>;
+export function modeTabs(el: HTMLElement, selected: 'import' | 'organize', change: (mode: 'import' | 'organize') => void): void {
+  const tabs = el.createDiv({ cls: 'zpi-mode-tabs', attr: { role: 'tablist', 'aria-label': '文献の操作' } });
+  for (const [mode, text] of [['import', '取り込み'], ['organize', '整理']] as const) {
+    const button = tabs.createEl('button', { text, attr: { role: 'tab', 'aria-selected': String(selected === mode) } });
+    button.addEventListener('click', () => { if (selected !== mode) change(mode); });
+  }
+}
 
 export class FolderPicker extends FuzzySuggestModal<string> {
   constructor(app: App, private done: (path: string) => void) { super(app); this.setPlaceholder('保存先を選択'); }
@@ -26,15 +33,18 @@ export class PaperPicker extends Modal {
   private rowStates = new Map<string, { button: HTMLButtonElement; state: HTMLElement }>();
   private hiddenCount = 0;
   private hasMore = false;
-  constructor(app: App, private client: ZoteroClient, private queue: QueueView, private done: (paper: Paper) => void, private openQueue: () => void, private imported: () => Promise<ImportedPapers>) { super(app); }
+  private ready = false;
+  constructor(app: App, private client: ZoteroClient, private queue: QueueView, private done: (paper: Paper) => void, private openQueue: () => void, private imported: () => Promise<ImportedPapers>, private organize: () => void, private setup: () => void) { super(app); }
   async onOpen(): Promise<void> {
     this.closed = false;
     this.setTitle('Zoteroから取り込む');
     this.modalEl.addClass('zpi-modal');
     this.contentEl.addClass('zpi-picker');
+    modeTabs(this.contentEl, 'import', () => this.organize());
+    let librarySelect!: HTMLSelectElement;
     new Setting(this.contentEl).setName('ライブラリ').addDropdown(drop => {
       drop.addOption('users/0', 'マイライブラリ').onChange(v => { this.library = v; void this.search(); });
-      void this.client.libraries().then(libs => { if (this.closed) return; drop.selectEl.replaceChildren(); for (const l of new Map(libs.map(l => [l.path, l])).values()) drop.addOption(l.path, l.name); drop.setValue(this.library); }).catch(e => { if (!this.closed) this.status.setText(String(e.message)); });
+      librarySelect = drop.selectEl;
     });
     new Setting(this.contentEl).setName('検索').addSearch(search => {
       search.setPlaceholder('タイトル・著者・年').onChange(v => {
@@ -49,9 +59,23 @@ export class PaperPicker extends Modal {
     this.updateQueue();
     this.status = this.contentEl.createEl('p', { cls: 'zpi-status' });
     this.results = this.contentEl.createDiv({ cls: 'zpi-results' });
-    await this.search();
+    this.status.setText('Zoteroに接続中…'); this.controller = new AbortController();
+    try {
+      await this.client.probe(this.controller.signal);
+      const libs = await this.client.libraries();
+      if (this.closed) return;
+      librarySelect.replaceChildren();
+      for (const l of new Map(libs.map(l => [l.path, l])).values()) librarySelect.createEl('option', { text: l.name, value: l.path });
+      librarySelect.value = this.library; this.ready = true;
+      await this.search();
+    } catch (e) {
+      if (this.closed) return;
+      this.status.setText((e as Error).message + '\n「整理」タブはZoteroが起動していなくても使えます。');
+      new Setting(this.results).addButton(b => b.setButtonText('接続方法を見る').onClick(this.setup));
+    }
   }
   private async search(): Promise<void> {
+    if (!this.ready || this.closed) return;
     this.controller?.abort(); this.controller = new AbortController();
     const signal = this.controller.signal, generation = ++this.generation;
     this.status.setText('検索中…');
@@ -111,14 +135,15 @@ export class PaperPicker extends Modal {
 
 export class QueueModal<T> extends Modal {
   private unsubscribe?: () => void;
-  constructor(app: App, private queue: SerialQueue<T>, private resolve: (job: QueueJob<T>) => void, private openFile: (path: string) => void) { super(app); }
+  constructor(app: App, private queue: SerialQueue<T>, private resolve: (job: QueueJob<T>) => void, private openFile: (path: string) => void, private history?: () => void) { super(app); }
   onOpen(): void {
-    this.setTitle('文献の取り込み状況'); this.modalEl.addClass('zpi-modal');
+    this.setTitle('文献の処理状況'); this.modalEl.addClass('zpi-modal');
     this.contentEl.addClass('zpi-queue'); this.unsubscribe = this.queue.subscribe(() => this.render()); this.render();
   }
   private render(): void {
     const scroll = this.contentEl.scrollTop; this.contentEl.empty();
     this.contentEl.createEl('p', { text: '選んだ順番に処理します。この画面を閉じても処理は続きます。' });
+    if (this.history) new Setting(this.contentEl).addButton(b => b.setButtonText('整理結果・元に戻す').onClick(() => { this.close(); this.history!(); }));
     if (!this.queue.jobs.length) this.contentEl.createEl('p', { text: '待ち行列は空です。取り込みコマンドから論文を選んでください。' });
     for (const job of this.queue.jobs) {
       const card = this.contentEl.createDiv({ cls: 'zpi-job' });

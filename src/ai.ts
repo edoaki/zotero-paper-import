@@ -31,7 +31,7 @@ export function runProcess(executable: string, args: string[], input: string, cw
   });
 }
 export const NAME_SCHEMA = { type: 'object', properties: { name: { type: ['string', 'null'] }, reason: { type: 'string' }, evidence: { type: 'string' } }, required: ['name', 'reason', 'evidence'], additionalProperties: false };
-export async function invokeAI(settings: Settings, prompt: string, signal?: AbortSignal): Promise<string> {
+export async function invokeAI(settings: Settings, prompt: string, signal?: AbortSignal, schema: unknown = NAME_SCHEMA): Promise<string> {
   const executable = await detectCLI(settings.provider, settings.cliPath);
   const cwd = await mkdtemp(join(tmpdir(), 'zotero-paper-import-'));
   const modelArgs = settings.model.trim() ? ['--model', settings.model.trim()] : [];
@@ -39,15 +39,15 @@ export async function invokeAI(settings: Settings, prompt: string, signal?: Abor
     let args: string[], env: NodeJS.ProcessEnv = {};
     let input = prompt;
     if (settings.provider === 'codex') {
-      await writeFile(join(cwd, 'schema.json'), JSON.stringify(NAME_SCHEMA), { mode: 0o600 });
+      await writeFile(join(cwd, 'schema.json'), JSON.stringify(schema), { mode: 0o600 });
       args = ['exec', '--sandbox', 'read-only', '--skip-git-repo-check', '--ephemeral', '--ignore-user-config', '--output-schema', join(cwd, 'schema.json'), '-o', join(cwd, 'result.json'), ...modelArgs, '-'];
     } else if (settings.provider === 'claude') {
-      args = ['-p', '--output-format', 'json', '--json-schema', JSON.stringify(NAME_SCHEMA), '--tools', '', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--disable-slash-commands', '--no-session-persistence', '--settings', '{"disableAllHooks":true}', ...modelArgs];
+      args = ['-p', '--output-format', 'json', '--json-schema', JSON.stringify(schema), '--tools', '', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--disable-slash-commands', '--no-session-persistence', '--settings', '{"disableAllHooks":true}', ...modelArgs];
     } else if (settings.provider === 'antigravity') {
       const agentDir = join(cwd, '.agents', 'agents', 'zpi-paper-namer');
       await mkdir(agentDir, { recursive: true });
       await writeFile(join(agentDir, 'agent.md'), ANTIGRAVITY_AGENT, { mode: 0o600 });
-      args = antigravityArguments(settings.model, NAME_SCHEMA, Math.max(15, Math.min(600, settings.timeoutSeconds)));
+      args = antigravityArguments(settings.model, schema, Math.max(15, Math.min(600, settings.timeoutSeconds)));
       input = antigravityInput(prompt);
     } else {
       args = ['run', '--format', 'json', '--agent', 'paper-namer', ...modelArgs];
