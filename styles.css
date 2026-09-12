@@ -36,7 +36,13 @@
   .zpi-picker .setting-item-info, .zpi-picker .setting-item-control { flex-basis: 100%; }
   .zpi-queue .setting-item-control { justify-content: flex-start; }
 }
-.zpi-settings .zpi-template { width: min(600px, 70vw); font-family: var(--font-monospace); font-size: var(--font-smaller); }
+.zpi-settings { min-width: 0; overflow-x: hidden; }
+.zpi-template-section { min-width: 0; max-width: 100%; overflow: hidden; }
+.zpi-template-section > p { overflow-wrap: anywhere; }
+.zpi-template-editor { display: block; min-width: 0; max-width: 100%; }
+.zpi-template-editor .setting-item-control { display: block; width: 100%; min-width: 0; max-width: 100%; }
+.zpi-settings .zpi-template { display: block; width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; resize: vertical; font-family: var(--font-monospace); font-size: var(--font-smaller); }
+.zpi-template-reset .setting-item-control { width: 100%; min-width: 0; max-width: 100%; justify-content: flex-end; }
 .zpi-disclosure { padding: 12px; border-left: 3px solid var(--interactive-accent); background: var(--background-secondary); border-radius: 4px; }
 .zpi-settings details { margin: 20px 0; }
 .zpi-connection-state[data-state="connected"] .setting-item-name { color: var(--text-success); }
@@ -46,6 +52,8 @@
 .zpi-cli-setup[data-state="found"] > .setting-item .setting-item-name { color: var(--text-success); }
 .zpi-cli-setup[data-state="missing"] > .setting-item .setting-item-name { color: var(--text-warning); }
 .zpi-cli-setup:not([data-state="missing"]) .zpi-cli-retry { display: none; }
+.zpi-cli-setup:not([data-state="missing"]) .zpi-cli-guide,
+.zpi-cli-setup:not([data-state="missing"]) .zpi-cli-location { display: none; }
 .zpi-cli-setup .setting-item { flex-wrap: wrap; gap: 8px; }
 .zpi-cli-setup .setting-item-info, .zpi-cli-setup .setting-item-control { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 .zpi-cli-setup .setting-item-description { white-space: pre-wrap; }

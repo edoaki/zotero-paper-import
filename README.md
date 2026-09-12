@@ -4,17 +4,17 @@ Zoteroの論文を選ぶと、Obsidianの保管庫に「ノート＋PDF」が入
 
 ## まず、ここからダウンロード
 
-### [⬇ インストール用ZIPをダウンロード（日本語版 0.1.6）](https://github.com/edoaki/zotero-paper-import/releases/download/0.1.6/zotero-paper-import-0.1.6.zip)
+### [⬇ インストール用ZIPをダウンロード（日本語版 0.1.7）](https://github.com/edoaki/zotero-paper-import/releases/download/0.1.7/zotero-paper-import-0.1.7.zip)
 
 **上のリンクを押せば、必要なZIPを直接ダウンロードできます。GitHubへのログインは不要です。**
 
-GitHubの緑色の「Code → Download ZIP」や「Source code (zip)」は開発用です。インストールには、必ず上のリンクの `zotero-paper-import-0.1.6.zip` を使ってください。
+GitHubの緑色の「Code → Download ZIP」や「Source code (zip)」は開発用です。インストールには、必ず上のリンクの `zotero-paper-import-0.1.7.zip` を使ってください。
 
 ## Macでの入れ方
 
 ### 1. ZIPを展開する
 
-Finderの「ダウンロード」で `zotero-paper-import-0.1.6.zip` をダブルクリックします。
+Finderの「ダウンロード」で `zotero-paper-import-0.1.7.zip` をダブルクリックします。
 
 `zotero-paper-import` というフォルダができます。Safariなどで既に展開されている場合は、そのフォルダを使います。
 
@@ -118,7 +118,7 @@ plugins/zotero-paper-import-main/src/main.ts      × 開発用ZIPを使ってい
 
 Obsidianでこのプラグインのスイッチをオフにしてから、新しいZIPのフォルダ内にある **`main.js`・`manifest.json`・`styles.css` の3ファイルだけ**を、既存の `plugins/zotero-paper-import/` 内へコピーして置き換えます。
 
-**既存フォルダ全体は削除しないでください。** 設定の `data.json` やバックアップを残したまま更新できます。コピー後に「プラグインの再読み込み」を押すかObsidianを起動し直し、スイッチをオンにします。表示されるバージョンが **0.1.6** なら更新完了です。
+**既存フォルダ全体は削除しないでください。** 設定の `data.json` やバックアップを残したまま更新できます。コピー後に「プラグインの再読み込み」を押すかObsidianを起動し直し、スイッチをオンにします。表示されるバージョンが **0.1.7** なら更新完了です。
 
 ## AIで手法名にしたい場合
 

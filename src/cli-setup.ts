@@ -9,6 +9,7 @@ export class CLISetup {
   private timer?: ReturnType<typeof setTimeout>;
   private status: Setting;
   private guide: HTMLDetailsElement;
+  private location: HTMLDetailsElement;
   private input!: HTMLInputElement;
   constructor(private el: HTMLElement, private settings: Settings, private save: () => Promise<void>, private detected: () => void) {
     el.addClass('zpi-cli-setup');
@@ -27,8 +28,8 @@ export class CLISetup {
     if (os) this.renderGuide(body, os);
     const retry = new Setting(el).setDesc('インストールとログインが終わったら押してください。').addButton(b => b.setButtonText('再検出').onClick(() => { void this.check(true); }));
     retry.settingEl.addClass('zpi-cli-retry');
-    const location = el.createEl('details'); location.createEl('summary', { text: 'CLIの場所を指定（自動で見つからない場合）' });
-    new Setting(location).setName('CLIの実行ファイル').setDesc('空欄で自動検出。実行ファイルの場所はこの端末だけに保存します。Windowsでは.exeを指定してください。').addText(t => {
+    this.location = el.createEl('details', { cls: 'zpi-cli-location' }); this.location.createEl('summary', { text: 'CLIの場所を指定（自動で見つからない場合）' });
+    new Setting(this.location).setName('CLIの実行ファイル').setDesc('空欄で自動検出。実行ファイルの場所はこの端末だけに保存します。Windowsでは.exeを指定してください。').addText(t => {
       this.input = t.inputEl;
       t.setValue(settings.cliPath).setPlaceholder('自動検出').onChange(v => {
         settings.cliPath = v; this.generation++; clearTimeout(this.timer);
@@ -75,6 +76,7 @@ export class CLISetup {
       }
       this.status.setName(`${CLI_NAMES[provider]}：検出済み`).setDesc(`見つかりました：${file}\nログイン状態は「AI接続テスト」で確認してください。`);
       this.el.dataset.state = 'found'; this.guide.open = false;
+      this.location.open = false;
       this.detected();
     } catch {
       if (!current()) return;

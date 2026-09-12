@@ -41,10 +41,13 @@ export class ImportSettingsTab extends PluginSettingTab {
       if (s.naming === 'method') el.createEl('p', { text: '論文が新しく提案する手法名を使い、確認できなければ代替名で保存します。判断根拠はノートに残ります。' });
       if (s.naming === 'custom') this.rules(el);
     }
-    new Setting(el).setName('ノートのテンプレート').setHeading();
-    el.createEl('p', { text: '置き換え項目：{{title}}（題名）、{{authors}}（著者）、{{year}}（年）、{{abstract}}（要旨）、{{source_links}}（原文リンク）、{{pdf_links}}（PDFリンク）、{{naming_reason}}（命名の根拠）。自分のメモはこの領域の外に書きます。' });
-    new Setting(el).addTextArea(t => { t.inputEl.rows = 12; t.inputEl.addClass('zpi-template'); t.setValue(s.template).onChange(async v => { s.template = v; await p.saveSettings(); }); });
-    new Setting(el).addButton(b => b.setButtonText('テンプレートを標準に戻す').onClick(async () => { s.template = DEFAULT_TEMPLATE; await p.saveSettings(); this.display(); }));
+    const templateSection = el.createDiv({ cls: 'zpi-template-section' });
+    new Setting(templateSection).setName('ノートのテンプレート').setHeading();
+    templateSection.createEl('p', { text: '置き換え項目：{{title}}（題名）、{{authors}}（著者）、{{year}}（年）、{{abstract}}（要旨）、{{source_links}}（原文リンク）、{{pdf_links}}（PDFリンク）、{{naming_reason}}（命名の根拠）。自分のメモはこの領域の外に書きます。' });
+    const editor = new Setting(templateSection); editor.settingEl.addClass('zpi-template-editor');
+    editor.addTextArea(t => { t.inputEl.rows = 12; t.inputEl.addClass('zpi-template'); t.setValue(s.template).onChange(async v => { s.template = v; await p.saveSettings(); }); });
+    const reset = new Setting(templateSection); reset.settingEl.addClass('zpi-template-reset');
+    reset.addButton(b => b.setButtonText('テンプレートを標準に戻す').onClick(async () => { s.template = DEFAULT_TEMPLATE; await p.saveSettings(); this.display(); }));
     const details = el.createEl('details'); details.createEl('summary', { text: '接続の詳細設定' });
     new Setting(details).setName('ローカルAPIポート').setDesc('通常は変更不要。この端末のZoteroにのみ接続します。').addText(t => t.setValue(String(s.port)).onChange(async v => { const n = Number(v); if (Number.isInteger(n) && n > 0 && n < 65536) { s.port = n; await p.saveSettings(); this.recheckConnection?.(); } }));
     el.createEl('p', { text: '命名設定の変更で既存論文は改名されません。更新時は自分のメモを保持し、保管庫側でPDFが編集されていれば停止します。' });
