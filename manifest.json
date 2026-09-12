@@ -1,9 +1,9 @@
 {
   "id": "zotero-paper-import",
   "name": "Zotero Paper Import",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "minAppVersion": "1.13.4",
-  "description": "Zoteroの論文を選び、ノートとPDFを保管庫内のフォルダにまとめて保存します。AIによる手法名の命名にも対応。",
+  "description": "Zoteroの論文を選び、ノートとPDFを保管庫内にまとめて保存します。接続状態の自動表示、モデルの一覧選択、AIによる命名に対応。",
   "author": "edoaki",
   "authorUrl": "https://github.com/edoaki",
   "isDesktopOnly": true

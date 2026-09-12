@@ -7,3 +7,6 @@
 .zpi-settings .zpi-template { width: min(600px, 70vw); font-family: var(--font-monospace); font-size: var(--font-smaller); }
 .zpi-disclosure { padding: 12px; border-left: 3px solid var(--interactive-accent); background: var(--background-secondary); border-radius: 4px; }
 .zpi-settings details { margin: 20px 0; }
+.zpi-connection-state[data-state="connected"] .setting-item-name { color: var(--text-success); }
+.zpi-connection-state[data-state="disconnected"] .setting-item-name { color: var(--text-warning); }
+.zpi-connection-state button[hidden] { display: none !important; }

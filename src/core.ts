@@ -1,9 +1,9 @@
 export type NamingMode = 'author-year' | 'method' | 'custom';
-export type Provider = 'codex' | 'claude' | 'opencode';
+export type Provider = 'codex' | 'claude' | 'opencode' | 'gemini';
 export interface Rule { id: string; name: string; prompt: string }
 export interface Settings {
   folder: string; naming: NamingMode; provider: Provider; cliPath: string;
-  model: string; timeoutSeconds: number; fallback: 'author-year' | 'ask';
+  model: string; timeoutSeconds: number;
   rules: Rule[]; activeRule: string; template: string; port: number;
 }
 export const DEFAULT_TEMPLATE = `# {{title}}
@@ -23,7 +23,7 @@ export const DEFAULT_TEMPLATE = `# {{title}}
 `;
 export const DEFAULT_SETTINGS: Settings = {
   folder: '', naming: 'author-year', provider: 'codex', cliPath: '', model: '',
-  timeoutSeconds: 180, fallback: 'author-year', rules: [], activeRule: '',
+  timeoutSeconds: 180, rules: [], activeRule: '',
   template: DEFAULT_TEMPLATE, port: 23119,
 };
 export const METHOD_RULE = `この論文が新しく提案する手法・モデル・学習法の固有名または略称を使ってください。比較対象の手法、単に利用している既存モデル、データセット、問題の名前、「Ours」は採用しません。本文・実験・表にある記述も確認し、この論文の提案だと裏付けられる名前だけを採用してください。確認できない場合は name=null とし、略称を作らないでください。判断理由は日本語で、根拠の引用は原文のまま返してください。`;
@@ -124,7 +124,9 @@ export function readRecord(frontmatter: unknown): RecordData | null {
 }
 export function parseAI(text: string): { name: string | null; reason: string; evidence: string } {
   const stripped = text.trim().replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
-  const result = JSON.parse(stripped) as Record<string, unknown>;
+  let result: Record<string, unknown>;
+  try { result = JSON.parse(stripped); } catch { throw new Error('AIの返答を命名結果として読み取れませんでした。'); }
+  if (!result || typeof result !== 'object') throw new Error('AIの返答を命名結果として読み取れませんでした。');
   if (!(result.name === null || typeof result.name === 'string') || typeof result.reason !== 'string' || typeof result.evidence !== 'string') throw new Error('AIの返答を命名結果として読み取れませんでした。');
   if (result.name !== null && (!result.name.trim() || result.name.length > 200 || !result.evidence.trim())) throw new Error('AIが名前の根拠を示さなかったため、採用しませんでした。');
   return { name: result.name === null ? null : safeName(result.name), reason: result.reason.slice(0, 4000), evidence: result.evidence.slice(0, 4000) };

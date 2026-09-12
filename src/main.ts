@@ -5,7 +5,7 @@ import { Importer, type PDFInput, type StoredNote } from './importer';
 import { VaultStorage } from './storage';
 import { nameWithAI } from './ai';
 import { ImportSettingsTab } from './settings';
-import { PaperPicker, chooseAttachments, confirmChoice, requestName, Progress } from './ui';
+import { PaperPicker, chooseAttachments, confirmChoice, Progress } from './ui';
 
 export default class ZoteroPaperImport extends Plugin {
   declare settings: Settings;
@@ -15,12 +15,15 @@ export default class ZoteroPaperImport extends Plugin {
   private activeProgress?: Progress;
   async onload(): Promise<void> {
     const data = await this.loadData();
+    if (data) delete data.fallback;
     const previousDefault = DEFAULT_SETTINGS.template.replace('## 要旨', '## Abstract').replace('## 命名の根拠', '## Naming');
     if (data?.template === previousDefault) data.template = DEFAULT_SETTINGS.template;
     this.settings = { ...structuredClone(DEFAULT_SETTINGS), ...(data || {}), ...this.app.loadLocalStorage(this.manifest.id + ':device') };
     this.store = new VaultStorage(this.app, this.manifest.id);
     this.importer = new Importer(this.store);
-    this.addSettingTab(new ImportSettingsTab(this.app, this));
+    const settingsTab = new ImportSettingsTab(this.app, this);
+    this.addSettingTab(settingsTab);
+    this.register(() => settingsTab.hide());
     this.addRibbonIcon('download', 'Zotero Paper Import', () => { void this.openPicker(); });
     this.addCommand({ id: 'import-paper', name: 'Zoteroから論文を取り込む', callback: () => { void this.openPicker(); } });
     this.addCommand({ id: 'refresh-paper', name: 'この論文の情報・PDFを更新', callback: () => { void this.refreshActive(false); } });
@@ -105,10 +108,6 @@ export default class ZoteroPaperImport extends Plugin {
       if (result) return result;
       reason = '確認できる手法名が見つかりませんでした';
     } catch (e) { if (progress.controller.signal.aborted) return null; reason = (e as Error).message; }
-    if (this.settings.fallback === 'ask') {
-      const name = await requestName(this.app, fallback.name);
-      return name ? { name: safeName(name), mode: this.settings.naming, reason: 'AI命名できなかったため手入力。\n' + reason } : null;
-    }
     new Notice('著者名＋年で保存します。\n' + reason, 12000);
     return { ...fallback, reason: fallback.reason + '\n\nAIで命名できなかった理由：' + reason };
   }

@@ -4,17 +4,17 @@ Zoteroの論文を選ぶと、Obsidianの保管庫に「ノート＋PDF」が入
 
 ## まず、ここからダウンロード
 
-### [⬇ インストール用ZIPをダウンロード（日本語版 0.1.1）](https://github.com/edoaki/zotero-paper-import/releases/download/0.1.1/zotero-paper-import-0.1.1.zip)
+### [⬇ インストール用ZIPをダウンロード（日本語版 0.1.2）](https://github.com/edoaki/zotero-paper-import/releases/download/0.1.2/zotero-paper-import-0.1.2.zip)
 
 **上のリンクを押せば、必要なZIPを直接ダウンロードできます。GitHubへのログインは不要です。**
 
-GitHubの緑色の「Code → Download ZIP」や「Source code (zip)」は開発用です。インストールには、必ず上のリンクの `zotero-paper-import-0.1.1.zip` を使ってください。
+GitHubの緑色の「Code → Download ZIP」や「Source code (zip)」は開発用です。インストールには、必ず上のリンクの `zotero-paper-import-0.1.2.zip` を使ってください。
 
 ## Macでの入れ方
 
 ### 1. ZIPを展開する
 
-Finderの「ダウンロード」で `zotero-paper-import-0.1.1.zip` をダブルクリックします。
+Finderの「ダウンロード」で `zotero-paper-import-0.1.2.zip` をダブルクリックします。
 
 `zotero-paper-import` というフォルダができます。Safariなどで既に展開されている場合は、そのフォルダを使います。
 
@@ -78,7 +78,7 @@ plugins/zotero-paper-import-main/src/main.ts      × 開発用ZIPを使ってい
 
 1. Macで**Zotero 10以降**を起動します。
 2. Zoteroの「設定 → 詳細」で、他のアプリケーションと通信することを許可します。
-3. Obsidianの「設定 → Zotero Paper Import」で **接続確認** を押します。
+3. Obsidianの「設定 → Zotero Paper Import」を開き、**Zotero：接続済み** と表示されることを確認します。状態は自動で更新されます。
 4. **保存先**に、保管庫内のフォルダ名を入力します。例：`文献`。まだないフォルダでも使えます。
 5. 最初は **命名方式：著者名＋年（AI不要）** のままで試してください。
 6. 設定を閉じ、⌘Pを押して **Zoteroから論文を取り込む** と入力し、そのコマンドを選びます。
@@ -110,14 +110,15 @@ plugins/zotero-paper-import-main/src/main.ts      × 開発用ZIPを使ってい
 
 Obsidianでこのプラグインのスイッチをオフにしてから、新しいZIPのフォルダ内にある **`main.js`・`manifest.json`・`styles.css` の3ファイルだけ**を、既存の `plugins/zotero-paper-import/` 内へコピーして置き換えます。
 
-**既存フォルダ全体は削除しないでください。** 設定の `data.json` やバックアップを残したまま更新できます。コピー後に「プラグインの再読み込み」を押すかObsidianを起動し直し、スイッチをオンにします。表示されるバージョンが **0.1.1** なら更新完了です。
+**既存フォルダ全体は削除しないでください。** 設定の `data.json` やバックアップを残したまま更新できます。コピー後に「プラグインの再読み込み」を押すかObsidianを起動し直し、スイッチをオンにします。表示されるバージョンが **0.1.2** なら更新完了です。
 
 ## AIで手法名にしたい場合
 
-基本の取り込みができたら、設定の **命名方式 → 手法名（AI）** を選びます。使うCLIを選択し、インストール・ログイン済みの状態で「検出」「AI接続テスト」を実行してください。
+基本の取り込みができたら、設定の **命名方式 → 手法名（AI）** を選びます。使うCLIを選択し、インストール・ログイン済みの状態で「検出」「AI接続テスト」を実行してください。**モデルは一覧から選べます。名前を入力する必要はありません。迷ったら「自動」のままで使えます。**
 
-- 対応候補：Codex、Claude Code、OpenCode。
-- 実機で成功を確認済みなのはCodexです。Claude Codeは認証済み環境での確認待ち、OpenCodeは実験的対応です。
+- 対応候補：Codex、Claude Code、OpenCode、Google Gemini CLI。
+- 実機で成功を確認済みなのはCodexです。Claude Codeは認証済み環境での確認待ち、OpenCodeとGemini CLIは実験的対応です。
+- AIが命名できない場合は、必ず著者名＋年で保存します。切り替えの設定は不要です。
 - 自分の命名ルールを文章で登録し、書き出して共有することもできます。
 - AI利用時は書誌情報とPDFの抽出本文を選択したAIへ送信します。料金・利用上限はそのCLIで利用するサービスに従います。
 
