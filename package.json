@@ -1,8 +1,8 @@
 {
   "name": "zotero-paper-import",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
-  "description": "Zoteroの論文を選び、ノートとPDFを保管庫内にまとめて保存します。接続状態の自動表示、モデルの一覧選択、AIによる命名に対応。",
+  "description": "Zoteroの論文を続けて選び、バックグラウンドで順番に命名・保存します。ノートとPDFを保管庫内にまとめて取り込めます。",
   "scripts": {
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit",

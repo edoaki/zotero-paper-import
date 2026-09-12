@@ -1,9 +1,41 @@
-.zpi-picker { min-width: min(640px, 85vw); }
-.zpi-results { max-height: 55vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
-.zpi-paper { display: flex; flex-direction: column; align-items: flex-start; text-align: left; height: auto; white-space: normal; padding: 12px; gap: 5px; }
+.modal.zpi-modal {
+  width: min(760px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 32px);
+  min-width: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+.zpi-modal .modal-title { overflow-wrap: anywhere; padding-right: 20px; }
+.zpi-modal .modal-content { min-width: 0; min-height: 0; box-sizing: border-box; overflow-x: hidden; }
+.zpi-picker { width: 100%; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.zpi-picker > .setting-item { flex-shrink: 0; }
+.zpi-modal .setting-item { flex-wrap: wrap; gap: 10px; min-width: 0; }
+.zpi-modal .setting-item-info { min-width: 0; overflow-wrap: anywhere; }
+.zpi-modal .setting-item-control { min-width: 0; max-width: 100%; flex-wrap: wrap; }
+.zpi-picker .setting-item-control { flex: 1 1 240px; }
+.zpi-modal select, .zpi-modal input, .zpi-modal .search-input-container { max-width: 100%; min-width: 0; box-sizing: border-box; }
+.zpi-picker select, .zpi-picker .search-input-container, .zpi-picker input { width: 100%; }
+.zpi-results { min-height: 100px; max-height: 50vh; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 8px; }
+.zpi-modal .zpi-paper { display: flex; flex: 0 0 auto; flex-direction: column; align-items: flex-start; text-align: left; width: 100%; min-width: 0; max-width: 100%; height: auto; white-space: normal; padding: 12px; gap: 5px; box-sizing: border-box; overflow-wrap: anywhere; }
+.zpi-paper strong, .zpi-paper span { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 .zpi-paper strong { line-height: 1.4; }
+.zpi-paper:disabled { opacity: 0.85; }
 .zpi-meta, .zpi-status { color: var(--text-muted); font-size: var(--font-ui-small); }
-.zpi-status { white-space: pre-wrap; }
+.zpi-status, .zpi-job-error { white-space: pre-wrap; overflow-wrap: anywhere; }
+.zpi-queue-summary { padding: 8px 12px; margin-top: 8px; background: var(--background-secondary); border-radius: 6px; font-size: var(--font-ui-small); overflow-wrap: anywhere; flex-shrink: 0; }
+.zpi-import-state { font-size: var(--font-ui-small); color: var(--text-accent); margin: 4px 0; overflow-wrap: anywhere; }
+.zpi-import-state[data-state="completed"] { color: var(--text-success); }
+.zpi-import-state[data-state="needs-input"], .zpi-import-state[data-state="failed"] { color: var(--text-warning); }
+.zpi-job { border: 1px solid var(--background-modifier-border); border-radius: 8px; padding: 12px; margin-bottom: 10px; overflow-wrap: anywhere; }
+.zpi-job .setting-item { border: 0; padding-bottom: 0; }
+.zpi-statusbar { cursor: pointer; }
+@media (max-width: 520px) {
+  .modal.zpi-modal { width: calc(100vw - 16px); max-width: calc(100vw - 16px); padding: 14px; }
+  .zpi-picker .setting-item-info, .zpi-picker .setting-item-control { flex-basis: 100%; }
+  .zpi-queue .setting-item-control { justify-content: flex-start; }
+}
 .zpi-settings .zpi-template { width: min(600px, 70vw); font-family: var(--font-monospace); font-size: var(--font-smaller); }
 .zpi-disclosure { padding: 12px; border-left: 3px solid var(--interactive-accent); background: var(--background-secondary); border-radius: 4px; }
 .zpi-settings details { margin: 20px 0; }

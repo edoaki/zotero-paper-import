@@ -1,6 +1,9 @@
 import { App, Modal, Setting, FuzzySuggestModal, TFolder } from 'obsidian';
-import { authorsOf, yearOf, type ZoteroItem, type Paper } from './core';
+import { authorsOf, yearOf, type ZoteroItem, type Paper, identity } from './core';
 import { ZoteroClient } from './zotero';
+import { JOB_LABELS, type SerialQueue, type QueueJob } from './queue';
+
+type QueueView = Pick<SerialQueue<unknown>, 'jobs' | 'subscribe' | 'latest'>;
 
 export class FolderPicker extends FuzzySuggestModal<string> {
   constructor(app: App, private done: (path: string) => void) { super(app); this.setPlaceholder('保存先を選択'); }
@@ -16,13 +19,19 @@ export class PaperPicker extends Modal {
   private results!: HTMLElement;
   private status!: HTMLElement;
   private generation = 0;
-  constructor(app: App, private client: ZoteroClient, private done: (paper: Paper) => void) { super(app); }
+  private closed = false;
+  private unsubscribe?: () => void;
+  private queueSummary!: HTMLElement;
+  private rowStates = new Map<string, { button: HTMLButtonElement; state: HTMLElement }>();
+  constructor(app: App, private client: ZoteroClient, private queue: QueueView, private done: (paper: Paper) => void, private openQueue: () => void) { super(app); }
   async onOpen(): Promise<void> {
+    this.closed = false;
     this.setTitle('Zoteroから取り込む');
+    this.modalEl.addClass('zpi-modal');
     this.contentEl.addClass('zpi-picker');
     new Setting(this.contentEl).setName('ライブラリ').addDropdown(drop => {
       drop.addOption('users/0', 'マイライブラリ').onChange(v => { this.library = v; void this.search(); });
-      void this.client.libraries().then(libs => { for (const l of libs) drop.addOption(l.path, l.name); }).catch(e => { this.status.setText(String(e.message)); });
+      void this.client.libraries().then(libs => { if (this.closed) return; drop.selectEl.replaceChildren(); for (const l of new Map(libs.map(l => [l.path, l])).values()) drop.addOption(l.path, l.name); drop.setValue(this.library); }).catch(e => { if (!this.closed) this.status.setText(String(e.message)); });
     });
     new Setting(this.contentEl).setName('検索').addSearch(search => {
       search.setPlaceholder('タイトル・著者・年').onChange(v => {
@@ -31,6 +40,10 @@ export class PaperPicker extends Modal {
       search.inputEl.setAttribute('aria-label', 'Zoteroの論文を検索');
       setTimeout(() => search.inputEl.focus(), 50);
     });
+    this.queueSummary = this.contentEl.createDiv({ cls: 'zpi-queue-summary' });
+    new Setting(this.contentEl).setDesc('論文を続けて選べます。画面を閉じても順番に処理します。').addButton(b => b.setButtonText('取り込み状況を見る').onClick(this.openQueue));
+    this.unsubscribe = this.queue.subscribe(() => this.updateQueue());
+    this.updateQueue();
     this.status = this.contentEl.createEl('p', { cls: 'zpi-status' });
     this.results = this.contentEl.createDiv({ cls: 'zpi-results' });
     await this.search();
@@ -39,7 +52,7 @@ export class PaperPicker extends Modal {
     this.controller?.abort(); this.controller = new AbortController();
     const signal = this.controller.signal, generation = ++this.generation;
     this.status.setText('検索中…');
-    this.results.empty();
+    this.results.empty(); this.rowStates.clear();
     try {
       const items = await this.client.search(this.query, this.library, signal);
       if (generation !== this.generation || signal.aborted) return;
@@ -51,9 +64,12 @@ export class PaperPicker extends Modal {
         button.createEl('strong', { text: item.data.title || 'タイトル未設定' });
         button.createEl('span', { text: `${authorsOf(item)} · ${yearOf(item)}`, cls: 'zpi-meta' });
         const state = button.createEl('span', { text: 'PDF確認中…', cls: 'zpi-meta' });
-        button.addEventListener('click', () => { this.close(); this.done(paper); });
+        const importedState = button.createEl('span', { cls: 'zpi-import-state' });
+        this.rowStates.set('import:' + identity(paper), { button, state: importedState });
+        button.addEventListener('click', () => { this.done(paper); this.updateQueue(); });
         rows.push({ paper, state });
       }
+      this.updateQueue();
       // Limit simultaneous requests to avoid overwhelming a large Zotero library.
       let cursor = 0;
       await Promise.all(Array.from({ length: Math.min(4, rows.length) }, async () => {
@@ -67,7 +83,50 @@ export class PaperPicker extends Modal {
       }));
     } catch (e) { if (!signal.aborted) this.status.setText((e as Error).message); }
   }
-  onClose(): void { this.controller?.abort(); clearTimeout(this.timer); this.contentEl.empty(); }
+  private updateQueue(): void {
+    const running = this.queue.jobs.find(j => j.state === 'running');
+    const count = this.queue.jobs.filter(j => j.state === 'queued').length;
+    this.queueSummary.setText(running ? `処理中：${running.title} — ${running.progress}　／　待機中：${count}件` : count ? `待機中：${count}件` : '論文を選ぶと待ち行列に追加されます');
+    for (const [key, row] of this.rowStates) {
+      const job = this.queue.latest(key);
+      row.state.setText(job ? `${JOB_LABELS[job.state]}${job.state === 'running' ? '：' + job.progress : ''}` : 'クリックして取り込む');
+      row.state.dataset.state = job?.state || 'new';
+      row.button.disabled = !!job && ['queued', 'running', 'needs-input', 'completed'].includes(job.state);
+    }
+  }
+  onClose(): void { this.closed = true; this.controller?.abort(); clearTimeout(this.timer); this.unsubscribe?.(); this.contentEl.empty(); }
+}
+
+export class QueueModal<T> extends Modal {
+  private unsubscribe?: () => void;
+  constructor(app: App, private queue: SerialQueue<T>, private resolve: (job: QueueJob<T>) => void, private openFile: (path: string) => void) { super(app); }
+  onOpen(): void {
+    this.setTitle('文献の取り込み状況'); this.modalEl.addClass('zpi-modal');
+    this.contentEl.addClass('zpi-queue'); this.unsubscribe = this.queue.subscribe(() => this.render()); this.render();
+  }
+  private render(): void {
+    const scroll = this.contentEl.scrollTop; this.contentEl.empty();
+    this.contentEl.createEl('p', { text: '選んだ順番に処理します。この画面を閉じても処理は続きます。' });
+    if (!this.queue.jobs.length) this.contentEl.createEl('p', { text: '待ち行列は空です。取り込みコマンドから論文を選んでください。' });
+    for (const job of this.queue.jobs) {
+      const card = this.contentEl.createDiv({ cls: 'zpi-job' });
+      card.createEl('strong', { text: job.title });
+      card.createEl('p', { text: `${JOB_LABELS[job.state]}：${job.progress}`, cls: 'zpi-import-state' }).dataset.state = job.state;
+      if (job.path) card.createEl('p', { text: job.path, cls: 'zpi-meta' });
+      if (job.error) card.createEl('p', { text: job.error, cls: 'zpi-job-error' });
+      const request = job.input as { kind?: string; reason?: string } | undefined;
+      if (request?.reason) card.createEl('p', { text: request.reason, cls: 'zpi-meta' });
+      const actions = new Setting(card);
+      if (job.state === 'completed' && job.path) actions.addButton(b => b.setButtonText('ノートを開く').onClick(() => { this.close(); this.openFile(job.path!); }));
+      if (job.state === 'needs-input') actions.addButton(b => b.setButtonText(request?.kind === 'select-pdf' ? 'PDFを選択' : 'ノートだけ保存').setCta().onClick(() => this.resolve(job)));
+      if (['failed', 'cancelled', 'needs-input'].includes(job.state)) actions.addButton(b => b.setButtonText('再試行').onClick(() => this.queue.retry(job.id)));
+      if (['queued', 'running', 'needs-input'].includes(job.state) && !job.committing) actions.addButton(b => b.setButtonText('キャンセル').onClick(() => this.queue.cancel(job.id)));
+    }
+    new Setting(this.contentEl).addButton(b => b.setButtonText('完了・キャンセル済みを一覧から消す').onClick(() => this.queue.clearFinished()));
+    this.contentEl.scrollTop = scroll;
+  }
+  onClose(): void { this.unsubscribe?.(); this.contentEl.empty(); }
+
 }
 export function chooseAttachments(app: App, items: ZoteroItem[]): Promise<ZoteroItem[] | null> {
   return new Promise(resolve => {
@@ -76,7 +135,7 @@ export function chooseAttachments(app: App, items: ZoteroItem[]): Promise<Zotero
       private primary = items[0].key;
       private answered = false;
       onOpen(): void {
-        this.setTitle('PDFを選択');
+        this.setTitle('PDFを選択'); this.modalEl.addClass('zpi-modal');
         this.contentEl.createEl('p', { text: '本文と必要な補足資料を選んでください。' });
         new Setting(this.contentEl).setName('本文').addDropdown(d => {
           for (const i of items) d.addOption(i.key, String(i.data.title || i.data.filename || i.key));
