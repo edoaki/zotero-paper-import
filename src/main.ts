@@ -1,5 +1,5 @@
 import { Plugin, Notice, Modal, Setting, TFile, TFolder } from 'obsidian';
-import { DEFAULT_SETTINGS, authorYear, safeName, validateFolder, generatedBounds, identity, type Settings, type Paper, type NameResult, type ZoteroItem } from './core';
+import { DEFAULT_SETTINGS, authorYear, safeName, validateFolder, generatedBounds, identity, migrateAISettings, type Settings, type Paper, type NameResult, type ZoteroItem } from './core';
 import { ZoteroClient } from './zotero';
 import { Importer, type PDFInput, type StoredNote } from './importer';
 import { VaultStorage } from './storage';
@@ -32,11 +32,13 @@ export default class ZoteroPaperImport extends Plugin {
     const previousDefault = DEFAULT_SETTINGS.template.replace('## 要旨', '## Abstract').replace('## 命名の根拠', '## Naming');
     if (data?.template === previousDefault) data.template = DEFAULT_SETTINGS.template;
     this.settings = { ...structuredClone(DEFAULT_SETTINGS), ...(data || {}), ...this.app.loadLocalStorage(this.manifest.id + ':device') };
+    const migrated = migrateAISettings(this.settings);
+    if (migrated !== this.settings) { this.settings = migrated; await this.saveSettings(); }
     this.store = new VaultStorage(this.app, this.manifest.id);
     this.importer = new Importer(this.store);
     this.queue = new SerialQueue((job, progress) => this.runTask(job, progress));
     const saved = this.app.loadLocalStorage(this.queueStorageKey);
-    if (Array.isArray(saved)) this.queue.restore(saved.filter(j => j?.id && j?.key && j?.payload?.paper?.item?.key && j?.payload?.settings && j.state in JOB_LABELS));
+    if (Array.isArray(saved)) this.queue.restore(saved.filter(j => j?.id && j?.key && j?.payload?.paper?.item?.key && j?.payload?.settings && j.state in JOB_LABELS).map(j => ({ ...j, payload: { ...j.payload, settings: migrateAISettings(j.payload.settings) } })));
     const status = this.addStatusBarItem();
     status.addClass('zpi-statusbar'); status.setAttribute('role', 'button'); status.tabIndex = 0;
     const updateQueue = () => {
@@ -100,7 +102,7 @@ export default class ZoteroPaperImport extends Plugin {
     try { await client.probe(); }
     catch (e) { this.showSetup((e as Error).message); return; }
     this.picker?.close();
-    this.picker = new PaperPicker(this.app, client, this.queue, paper => this.enqueuePaper(paper), () => this.openQueue());
+    this.picker = new PaperPicker(this.app, client, this.queue, paper => this.enqueuePaper(paper), () => this.openQueue(), () => this.store.importedPapers(this.settings.folder));
     this.picker.open();
   }
   private async collectPDFs(client: ZoteroClient, paper: Paper, progress: JobProgress, task: ImportTask, tracked?: StoredNote): Promise<{ pdfs: PDFInput[]; reason: string }> {

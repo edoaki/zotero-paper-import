@@ -1,5 +1,5 @@
 export type NamingMode = 'author-year' | 'method' | 'custom';
-export type Provider = 'codex' | 'claude' | 'opencode' | 'gemini';
+export type Provider = 'codex' | 'claude' | 'opencode' | 'antigravity';
 export interface Rule { id: string; name: string; prompt: string }
 export interface Settings {
   folder: string; naming: NamingMode; provider: Provider; cliPath: string;
@@ -26,6 +26,10 @@ export const DEFAULT_SETTINGS: Settings = {
   timeoutSeconds: 180, rules: [], activeRule: '',
   template: DEFAULT_TEMPLATE, port: 23119,
 };
+export function migrateAISettings(settings: Settings): Settings {
+  if ((settings as { provider: string }).provider !== 'gemini') return settings;
+  return { ...settings, provider: 'antigravity', cliPath: '', model: '' };
+}
 export const METHOD_RULE = `この論文が新しく提案する手法・モデル・学習法の固有名または略称を使ってください。比較対象の手法、単に利用している既存モデル、データセット、問題の名前、「Ours」は採用しません。本文・実験・表にある記述も確認し、この論文の提案だと裏付けられる名前だけを採用してください。確認できない場合は name=null とし、略称を作らないでください。判断理由は日本語で、根拠の引用は原文のまま返してください。`;
 export interface ZoteroItem {
   key: string; version?: number; library?: { type: string; id: number; name?: string };

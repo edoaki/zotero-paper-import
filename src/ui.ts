@@ -2,6 +2,7 @@ import { App, Modal, Setting, FuzzySuggestModal, TFolder } from 'obsidian';
 import { authorsOf, yearOf, type ZoteroItem, type Paper, identity } from './core';
 import { ZoteroClient } from './zotero';
 import { JOB_LABELS, type SerialQueue, type QueueJob } from './queue';
+import { unimportedPage, type ImportedPapers } from './imported';
 
 type QueueView = Pick<SerialQueue<unknown>, 'jobs' | 'subscribe' | 'latest'>;
 
@@ -23,7 +24,9 @@ export class PaperPicker extends Modal {
   private unsubscribe?: () => void;
   private queueSummary!: HTMLElement;
   private rowStates = new Map<string, { button: HTMLButtonElement; state: HTMLElement }>();
-  constructor(app: App, private client: ZoteroClient, private queue: QueueView, private done: (paper: Paper) => void, private openQueue: () => void) { super(app); }
+  private hiddenCount = 0;
+  private hasMore = false;
+  constructor(app: App, private client: ZoteroClient, private queue: QueueView, private done: (paper: Paper) => void, private openQueue: () => void, private imported: () => Promise<ImportedPapers>) { super(app); }
   async onOpen(): Promise<void> {
     this.closed = false;
     this.setTitle('Zoteroから取り込む');
@@ -54,9 +57,14 @@ export class PaperPicker extends Modal {
     this.status.setText('検索中…');
     this.results.empty(); this.rowStates.clear();
     try {
-      const items = await this.client.search(this.query, this.library, signal);
+      const index = await this.imported();
       if (generation !== this.generation || signal.aborted) return;
-      this.status.setText(`${items.length}${items.length === 100 ? '件以上' : '件'}の論文。多い場合は検索語を追加して絞り込んでください。`);
+      const page = await unimportedPage(
+        start => this.client.searchPage(this.query, this.library, start, signal),
+        item => index.has({ item, library: this.library, serverId: this.client.serverId }), signal);
+      if (generation !== this.generation || signal.aborted) return;
+      const items = page.items;
+      this.hiddenCount = page.hidden; this.hasMore = page.hasMore;
       const rows: { paper: Paper; state: HTMLElement }[] = [];
       for (const item of items) {
         const paper: Paper = { item, library: this.library, serverId: this.client.serverId };
@@ -89,10 +97,14 @@ export class PaperPicker extends Modal {
     this.queueSummary.setText(running ? `処理中：${running.title} — ${running.progress}　／　待機中：${count}件` : count ? `待機中：${count}件` : '論文を選ぶと待ち行列に追加されます');
     for (const [key, row] of this.rowStates) {
       const job = this.queue.latest(key);
+      if (job?.state === 'completed' && job.path && this.app.vault.getAbstractFileByPath(job.path)) {
+        row.button.remove(); this.rowStates.delete(key); this.hiddenCount++; continue;
+      }
       row.state.setText(job ? `${JOB_LABELS[job.state]}${job.state === 'running' ? '：' + job.progress : ''}` : 'クリックして取り込む');
       row.state.dataset.state = job?.state || 'new';
-      row.button.disabled = !!job && ['queued', 'running', 'needs-input', 'completed'].includes(job.state);
+      row.button.disabled = !!job && ['queued', 'running', 'needs-input'].includes(job.state);
     }
+    if (this.status && this.results) this.status.setText(`未取り込み：${this.rowStates.size}件${this.hasMore ? '（続きは検索で絞り込めます）' : ''}。取り込み済み${this.hiddenCount}件は非表示です。`);
   }
   onClose(): void { this.closed = true; this.controller?.abort(); clearTimeout(this.timer); this.unsubscribe?.(); this.contentEl.empty(); }
 }

@@ -1,6 +1,7 @@
 import { App, TFile, TFolder, parseYaml, stringifyYaml, normalizePath } from 'obsidian';
 import type { Storage, StoredNote } from './importer';
 import { readRecord, replaceGenerated, type RecordData } from './core';
+import { ImportedPapers, inFolder } from './imported';
 
 export function frontmatter(text: string): { values: Record<string, unknown>; end: number } {
   const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
@@ -11,6 +12,18 @@ export function frontmatter(text: string): { values: Record<string, unknown>; en
 }
 export class VaultStorage implements Storage {
   constructor(private app: App, private pluginId: string) {}
+  async importedPapers(folder: string): Promise<ImportedPapers> {
+    const index = new ImportedPapers();
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      const cached = this.app.metadataCache.getFileCache(file)?.frontmatter;
+      // Managed notes remain identifiable even after a manual move outside the destination.
+      if (!inFolder(file.path, folder) && !cached?.zpi) continue;
+      if (cached && !cached.zpi && !cached['zotero-key']) continue;
+      const text = await this.app.vault.cachedRead(file);
+      try { index.add(frontmatter(text).values, text); } catch { /* unrelated or broken note */ }
+    }
+    return index;
+  }
   async records(): Promise<StoredNote[]> {
     const result: StoredNote[] = [];
     for (const file of this.app.vault.getMarkdownFiles()) {

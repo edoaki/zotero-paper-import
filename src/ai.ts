@@ -4,16 +4,18 @@ import { constants } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { METHOD_RULE, parseAI, type Paper, type Settings, type Provider, type NameResult } from './core';
+import { ANTIGRAVITY_AGENT, antigravityArguments, antigravityInput, parseAntigravityOutput } from './antigravity';
 
 export async function detectCLI(provider: Provider, configured = ''): Promise<string> {
-  const candidates = configured ? [configured.replace(/^~(?=\/)/, homedir())] : (process.env.PATH || '').split(delimiter).filter(Boolean).map(p => join(p, provider));
+  const command = provider === 'antigravity' ? 'agy' : provider;
+  const candidates = configured ? [configured.replace(/^~(?=\/)/, homedir())] : (process.env.PATH || '').split(delimiter).filter(Boolean).map(p => join(p, command));
   if (!configured) {
-    for (const p of ['.local/bin', '.npm-global/bin', '.bun/bin', '.opencode/bin']) candidates.push(join(homedir(), p, provider));
-    candidates.push('/opt/homebrew/bin/' + provider, '/usr/local/bin/' + provider);
-    try { for (const v of (await readdir(join(homedir(), '.nvm/versions/node'))).sort().reverse()) candidates.push(join(homedir(), '.nvm/versions/node', v, 'bin', provider)); } catch { /* optional install */ }
+    for (const p of ['.local/bin', '.npm-global/bin', '.bun/bin', '.opencode/bin']) candidates.push(join(homedir(), p, command));
+    candidates.push('/opt/homebrew/bin/' + command, '/usr/local/bin/' + command);
+    try { for (const v of (await readdir(join(homedir(), '.nvm/versions/node'))).sort().reverse()) candidates.push(join(homedir(), '.nvm/versions/node', v, 'bin', command)); } catch { /* optional install */ }
   }
   for (const p of candidates) { try { await access(p, constants.X_OK); return p; } catch { /* next */ } }
-  throw new Error(`${provider}が見つかりません。インストールとログインを済ませ、設定の「検出」を押してください。`);
+  throw new Error(`${command}が見つかりません。インストールとログインを済ませ、設定の「検出」を押してください。`);
 }
 export function runProcess(executable: string, args: string[], input: string, cwd: string, timeout: number, signal?: AbortSignal, extraEnv: NodeJS.ProcessEnv = {}): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -31,7 +33,7 @@ export function runProcess(executable: string, args: string[], input: string, cw
     child.on('error', () => finish(new Error('CLIを起動できませんでした')));
     child.on('close', code => {
       if (code !== 0) {
-        const hint = /auth|login|logged|token|credential|api.key/i.test(stderr + stdout) ? 'CLIのログインを確認してください' : 'ターミナルでCLIのモデル・設定を確認してください';
+        const hint = /auth|login|logged|sign.in|token|credential|api.key/i.test(stderr + stdout) ? 'CLIのログインを確認してください' : 'ターミナルでCLIのモデル・設定を確認してください';
         finish(new Error(`AIの実行に失敗しました（終了コード：${code}）。${hint}`));
       } else finish();
     });
@@ -40,41 +42,31 @@ export function runProcess(executable: string, args: string[], input: string, cw
   });
 }
 export const NAME_SCHEMA = { type: 'object', properties: { name: { type: ['string', 'null'] }, reason: { type: 'string' }, evidence: { type: 'string' } }, required: ['name', 'reason', 'evidence'], additionalProperties: false };
-export function geminiArguments(directory: string, model: string): string[] {
-  return ['--prompt', 'Use the supplied input as the naming task. Return only the requested JSON. Do not use tools.', '--output-format', 'json', '--approval-mode', 'plan', '--policy', join(directory, 'no-tools.toml'), '--extensions', 'none', ...(model.trim() ? ['--model', model.trim()] : [])];
-}
-export function parseGeminiOutput(raw: string): string {
-  let envelope: { response?: unknown; error?: unknown };
-  try { envelope = JSON.parse(raw); } catch { throw new Error('Gemini CLIの返答を読み取れませんでした。'); }
-  if (envelope.error || typeof envelope.response !== 'string' || !envelope.response.trim()) throw new Error('Gemini CLIが命名を完了できませんでした。ログイン状態とモデルの利用可否を確認してください。');
-  return envelope.response;
-}
 export async function invokeAI(settings: Settings, prompt: string, signal?: AbortSignal): Promise<string> {
   const executable = await detectCLI(settings.provider, settings.cliPath);
   const cwd = await mkdtemp(join(tmpdir(), 'zotero-paper-import-'));
   const modelArgs = settings.model.trim() ? ['--model', settings.model.trim()] : [];
   try {
     let args: string[], env: NodeJS.ProcessEnv = {};
+    let input = prompt;
     if (settings.provider === 'codex') {
       await writeFile(join(cwd, 'schema.json'), JSON.stringify(NAME_SCHEMA), { mode: 0o600 });
       args = ['exec', '--sandbox', 'read-only', '--skip-git-repo-check', '--ephemeral', '--ignore-user-config', '--output-schema', join(cwd, 'schema.json'), '-o', join(cwd, 'result.json'), ...modelArgs, '-'];
     } else if (settings.provider === 'claude') {
       args = ['-p', '--output-format', 'json', '--json-schema', JSON.stringify(NAME_SCHEMA), '--tools', '', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--disable-slash-commands', '--no-session-persistence', '--settings', '{"disableAllHooks":true}', ...modelArgs];
-    } else if (settings.provider === 'gemini') {
-      await mkdir(join(cwd, '.gemini'));
-      await writeFile(join(cwd, '.gemini', 'settings.json'), JSON.stringify({
-        tools: { core: ['__zpi_no_tools__'] }, mcp: { allowed: ['__zpi_no_servers__'] },
-        hooksConfig: { enabled: false }, skills: { enabled: false },
-      }), { mode: 0o600 });
-      await writeFile(join(cwd, 'no-tools.toml'), '[[rule]]\ntoolName = "*"\ndecision = "deny"\npriority = 999\n', { mode: 0o600 });
-      args = geminiArguments(cwd, settings.model);
+    } else if (settings.provider === 'antigravity') {
+      const agentDir = join(cwd, '.agents', 'agents', 'zpi-paper-namer');
+      await mkdir(agentDir, { recursive: true });
+      await writeFile(join(agentDir, 'agent.md'), ANTIGRAVITY_AGENT, { mode: 0o600 });
+      args = antigravityArguments(settings.model, NAME_SCHEMA, Math.max(15, Math.min(600, settings.timeoutSeconds)));
+      input = antigravityInput(prompt);
     } else {
       args = ['run', '--format', 'json', '--agent', 'paper-namer', ...modelArgs];
       env = { OPENCODE_CONFIG_CONTENT: JSON.stringify({ share: 'disabled', permission: 'deny', agent: { 'paper-namer': { mode: 'primary', description: 'Name a paper from supplied text only', permission: 'deny', prompt: 'Use only the supplied paper. Never use tools. Return JSON only.' } } }) };
     }
-    const raw = await runProcess(executable, args, prompt, cwd, Math.max(15, Math.min(600, settings.timeoutSeconds)) * 1000, signal, env);
+    const raw = await runProcess(executable, args, input, cwd, Math.max(15, Math.min(600, settings.timeoutSeconds)) * 1000, signal, env);
     if (settings.provider === 'codex') return await readFile(join(cwd, 'result.json'), 'utf8');
-    if (settings.provider === 'gemini') return parseGeminiOutput(raw);
+    if (settings.provider === 'antigravity') return parseAntigravityOutput(raw);
     if (settings.provider === 'claude') {
       const result = JSON.parse(raw);
       if (result.is_error) throw new Error('Claudeの命名に失敗しました');

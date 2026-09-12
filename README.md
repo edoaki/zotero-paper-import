@@ -4,17 +4,17 @@ Zoteroの論文を選ぶと、Obsidianの保管庫に「ノート＋PDF」が入
 
 ## まず、ここからダウンロード
 
-### [⬇ インストール用ZIPをダウンロード（日本語版 0.1.3）](https://github.com/edoaki/zotero-paper-import/releases/download/0.1.3/zotero-paper-import-0.1.3.zip)
+### [⬇ インストール用ZIPをダウンロード（日本語版 0.1.4）](https://github.com/edoaki/zotero-paper-import/releases/download/0.1.4/zotero-paper-import-0.1.4.zip)
 
 **上のリンクを押せば、必要なZIPを直接ダウンロードできます。GitHubへのログインは不要です。**
 
-GitHubの緑色の「Code → Download ZIP」や「Source code (zip)」は開発用です。インストールには、必ず上のリンクの `zotero-paper-import-0.1.3.zip` を使ってください。
+GitHubの緑色の「Code → Download ZIP」や「Source code (zip)」は開発用です。インストールには、必ず上のリンクの `zotero-paper-import-0.1.4.zip` を使ってください。
 
 ## Macでの入れ方
 
 ### 1. ZIPを展開する
 
-Finderの「ダウンロード」で `zotero-paper-import-0.1.3.zip` をダブルクリックします。
+Finderの「ダウンロード」で `zotero-paper-import-0.1.4.zip` をダブルクリックします。
 
 `zotero-paper-import` というフォルダができます。Safariなどで既に展開されている場合は、そのフォルダを使います。
 
@@ -93,6 +93,8 @@ plugins/zotero-paper-import-main/src/main.ts      × 開発用ZIPを使ってい
    └─ 本文.pdf
 ```
 
+**取り込み済みの論文は一覧に表示しません。** 保存先のサブフォルダも含め、既存ノートの `zotero-key` で判定します。従来のZotlitで作ったノートも対象です。ライブラリ情報がある場合は合わせて照合します。このプラグインで作ったノートは、別フォルダに移しても識別できます。
+
 ノートの「PDF」欄から、保管庫内のPDFを開けます。処理完了時に編集中のノートを勝手に切り替えることはありません。
 
 **PDF選択が必要な論文は「確認待ち」になります。** 「取り込み状況を見る」から「PDFを選択」を押して続行してください。PDF未取得の場合は、Zoteroでダウンロードして「再試行」するか、「ノートだけ保存」を選べます。確認待ちの間も、ほかの論文は処理します。
@@ -116,17 +118,19 @@ plugins/zotero-paper-import-main/src/main.ts      × 開発用ZIPを使ってい
 
 Obsidianでこのプラグインのスイッチをオフにしてから、新しいZIPのフォルダ内にある **`main.js`・`manifest.json`・`styles.css` の3ファイルだけ**を、既存の `plugins/zotero-paper-import/` 内へコピーして置き換えます。
 
-**既存フォルダ全体は削除しないでください。** 設定の `data.json` やバックアップを残したまま更新できます。コピー後に「プラグインの再読み込み」を押すかObsidianを起動し直し、スイッチをオンにします。表示されるバージョンが **0.1.3** なら更新完了です。
+**既存フォルダ全体は削除しないでください。** 設定の `data.json` やバックアップを残したまま更新できます。コピー後に「プラグインの再読み込み」を押すかObsidianを起動し直し、スイッチをオンにします。表示されるバージョンが **0.1.4** なら更新完了です。
 
 ## AIで手法名にしたい場合
 
 基本の取り込みができたら、設定の **命名方式 → 手法名（AI）** を選びます。使うCLIを選択し、インストール・ログイン済みの状態で「検出」「AI接続テスト」を実行してください。**モデルは一覧から選べます。名前を入力する必要はありません。迷ったら「自動」のままで使えます。**
 
-- 対応候補：Codex、Claude Code、OpenCode、Google Gemini CLI。
-- 実機で成功を確認済みなのはCodexです。Claude Codeは認証済み環境での確認待ち、OpenCodeとGemini CLIは実験的対応です。
+- 対応候補：Codex、Claude Code、OpenCode、Antigravity CLI（agy）。
+- 実機で成功を確認済みなのはCodexです。Claude Codeは認証済み環境での確認待ち、OpenCodeとAntigravity CLIは実験的対応です。
 - AIが命名できない場合は、必ず著者名＋年で保存します。切り替えの設定は不要です。
 - 自分の命名ルールを文章で登録し、書き出して共有することもできます。
 - AI利用時は書誌情報とPDFの抽出本文を選択したAIへ送信します。料金・利用上限はそのCLIで利用するサービスに従います。
+
+Antigravity CLIを使う場合は、[公式の導入案内](https://antigravity.google/docs/cli/install/)に沿ってインストールし、ターミナルで `agy` を開いてGoogleアカウントでログインしてください。その後、プラグイン設定で「Antigravity CLI」を選び、「検出」「一覧を更新」「AI接続テスト」の順に進めます。旧Gemini CLI設定はAntigravityへ自動移行し、以前のモデル名と実行ファイルの場所は引き継ぎません。利用できるモデル・利用枠はAntigravity側の契約と状態に従います。
 
 [命名・更新・iPadでの閲覧など、詳しい使い方](docs/README.ja.md)
 

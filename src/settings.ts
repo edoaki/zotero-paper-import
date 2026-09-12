@@ -27,10 +27,11 @@ export class ImportSettingsTab extends PluginSettingTab {
     new Setting(el).setName('命名方式').addDropdown(d => d.addOption('author-year', '著者名＋年（AI不要）').addOption('method', '手法名（AI）').addOption('custom', '自分のルール（AI）').setValue(s.naming).onChange(async v => { s.naming = v as NamingMode; await p.saveSettings(); this.display(); }));
     if (s.naming !== 'author-year') {
       el.createEl('p', { cls: 'zpi-disclosure', text: 'AI命名にはCLIのインストール・ログインが必要です。書誌情報とPDFの抽出本文を選択したAIへ送信します。利用料金・制限はそのサービスに従います。' });
-      new Setting(el).setName('使用するAI').addDropdown(d => d.addOption('codex', 'Codex').addOption('claude', 'Claude Code').addOption('opencode', 'OpenCode（実験的対応）').addOption('gemini', 'Google Gemini CLI（実験的対応）').setValue(s.provider).onChange(async v => { s.provider = v as Provider; s.cliPath = ''; s.model = ''; await p.saveSettings(); this.display(); }));
+      new Setting(el).setName('使用するAI').addDropdown(d => d.addOption('codex', 'Codex').addOption('claude', 'Claude Code').addOption('opencode', 'OpenCode（実験的対応）').addOption('antigravity', 'Antigravity CLI（実験的対応）').setValue(s.provider).onChange(async v => { s.provider = v as Provider; s.cliPath = ''; s.model = ''; await p.saveSettings(); this.display(); }));
       new Setting(el).setName('CLIの実行ファイル').setDesc('空欄なら自動検出。場所はこの端末だけに保存。').addText(t => t.setValue(s.cliPath).setPlaceholder('自動検出').onChange(async v => { s.cliPath = v; await p.saveSettings(); })).addButton(b => b.setButtonText('検出').onClick(async () => {
         try { s.cliPath = await detectCLI(s.provider, s.cliPath); const v = await runProcess(s.cliPath, ['--version'], '', tmpdir(), 10000); await p.saveSettings(); this.display(); new Notice(v.trim().slice(0, 200)); } catch (e) { new Notice((e as Error).message, 10000); }
       }));
+      if (s.provider === 'antigravity') el.createEl('p', { text: '公式のAntigravity CLI（agy）を使います。初回はターミナルでagyを開いてGoogleアカウントでログインしてください。モデル一覧もログイン後に取得できます。' });
       this.models(el);
       new Setting(el).setName('AI接続テスト').setDesc('短いテスト文を送信します。利用枠を消費する場合があります。').addButton(b => b.setButtonText('テスト').onClick(async () => {
         b.setDisabled(true); try { parseAI(await invokeAI(s, 'Return only JSON: {"name":null,"reason":"Connection successful","evidence":"test"}')); new Notice('AIに接続できました'); } catch (e) { new Notice((e as Error).message, 12000); } finally { b.setDisabled(false); }
@@ -93,12 +94,12 @@ export class ImportSettingsTab extends PluginSettingTab {
         const result = await discoverModels({ ...s }, controller.signal);
         if (controller.signal.aborted) return;
         populate(result);
-        row.setDesc(s.provider === 'claude' || s.provider === 'gemini' ? 'モデル名の入力は不要です。「自動」または種類を選んでください。利用できる種類はログイン先の契約によります。' : 'CLIから取得したモデル一覧です。迷ったら「自動」のままで使えます。');
+        row.setDesc(s.provider === 'claude' ? 'モデル名の入力は不要です。「自動」または種類を選んでください。利用できる種類はログイン先の契約によります。' : 'CLIから取得したモデル一覧です。迷ったら「自動」のままで使えます。');
       } catch (e) {
-        if (!controller.signal.aborted) row.setDesc('モデル一覧を取得できませんでした。「自動」を使うか、CLIを設定して「一覧を更新」を押してください。');
+        if (!controller.signal.aborted) row.setDesc(s.provider === 'antigravity' ? 'モデル一覧を取得できません。ターミナルでagyを開いてログインし、「一覧を更新」を押してください。「自動」も利用できます。' : 'モデル一覧を取得できませんでした。「自動」を使うか、CLIを設定して「一覧を更新」を押してください。');
       }
     };
-    if (s.provider === 'codex' || s.provider === 'opencode') row.addButton(b => b.setButtonText('一覧を更新').onClick(() => { void load(); }));
+    if (s.provider !== 'claude') row.addButton(b => b.setButtonText('一覧を更新').onClick(() => { void load(); }));
     void load();
   }
   private rules(el: HTMLElement): void {

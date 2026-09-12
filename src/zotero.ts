@@ -49,8 +49,11 @@ export class ZoteroClient {
     return [{ path: 'users/0', name: 'マイライブラリ' }, ...groups.map(g => ({ path: 'groups/' + (g.id || g.data?.id), name: g.data?.name || 'グループ' })).filter(g => /^groups\/\d+$/.test(g.path))];
   }
   async search(query: string, library: string, signal?: AbortSignal): Promise<ZoteroItem[]> {
-    const items = await this.get<ZoteroItem[]>(`/${library}/items/top?limit=100&sort=dateAdded&direction=desc&q=${encodeURIComponent(query)}&qmode=titleCreatorYear`, signal);
-    return items.filter(i => !['attachment', 'note'].includes(i.data.itemType || ''));
+    return (await this.searchPage(query, library, 0, signal)).items;
+  }
+  async searchPage(query: string, library: string, start: number, signal?: AbortSignal): Promise<{ items: ZoteroItem[]; hasMore: boolean }> {
+    const items = await this.get<ZoteroItem[]>(`/${library}/items/top?limit=100&start=${start}&sort=dateAdded&direction=desc&q=${encodeURIComponent(query)}&qmode=titleCreatorYear`, signal);
+    return { items: items.filter(i => !['attachment', 'note'].includes(i.data.itemType || '')), hasMore: items.length === 100 };
   }
   async paper(key: string, library: string, signal?: AbortSignal): Promise<Paper> {
     if (!/^[A-Z0-9]{8}$/.test(key) || !/^(users\/0|groups\/\d+)$/.test(library)) throw new Error('Zoteroの文献識別情報が不正です。');

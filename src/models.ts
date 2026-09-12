@@ -8,7 +8,6 @@ export interface ModelOption { value: string; label: string }
 export function defaultModels(provider: Provider): ModelOption[] {
   const auto = { value: '', label: provider === 'codex' ? '自動（Codexの標準モデル）' : '自動（CLIの既定モデル）' };
   if (provider === 'claude') return [auto, { value: 'sonnet', label: 'Sonnet（標準）' }, { value: 'opus', label: 'Opus（高性能）' }, { value: 'haiku', label: 'Haiku（高速）' }];
-  if (provider === 'gemini') return [auto, { value: 'auto', label: 'Gemini Auto（おまかせ）' }, { value: 'pro', label: 'Gemini Pro（高性能）' }, { value: 'flash', label: 'Gemini Flash（高速）' }, { value: 'flash-lite', label: 'Gemini Flash-Lite（軽量）' }];
   return [auto];
 }
 export function codexOptions(rows: unknown[]): ModelOption[] {
@@ -22,6 +21,15 @@ export function codexOptions(rows: unknown[]): ModelOption[] {
 }
 export function openCodeOptions(text: string): ModelOption[] {
   return [...new Set(text.split(/\r?\n/).map(s => s.trim()).filter(s => /^[\w.-]+\/[\w./:@+-]+$/.test(s)))].map(value => ({ value, label: value }));
+}
+export function antigravityOptions(text: string): ModelOption[] {
+  const models = new Map<string, ModelOption>();
+  for (const line of text.replace(/\u001b\[[0-9;]*m/g, '').split(/\r?\n/)) {
+    const match = line.trim().match(/^([a-z0-9]+(?:[._-][a-z0-9]+)+)\s+(.+)$/);
+    if (match) models.set(match[1], { value: match[1], label: match[2].trim() });
+  }
+  if (!models.size) throw new Error('Antigravity CLIのモデル一覧を取得できませんでした。ターミナルでagyを開いてログインしてください。');
+  return [...models.values()];
 }
 export async function listCodexModels(executable: string, signal?: AbortSignal): Promise<ModelOption[]> {
   return new Promise((resolve, reject) => {
@@ -73,8 +81,8 @@ export async function listCodexModels(executable: string, signal?: AbortSignal):
 }
 export async function discoverModels(settings: Settings, signal?: AbortSignal): Promise<ModelOption[]> {
   const base = defaultModels(settings.provider);
-  if (settings.provider === 'claude' || settings.provider === 'gemini') return base;
+  if (settings.provider === 'claude') return base;
   const executable = await detectCLI(settings.provider, settings.cliPath);
-  const models = settings.provider === 'codex' ? await listCodexModels(executable, signal) : openCodeOptions(await runProcess(executable, ['models'], '', tmpdir(), 20000, signal));
+  const models = settings.provider === 'codex' ? await listCodexModels(executable, signal) : (settings.provider === 'antigravity' ? antigravityOptions : openCodeOptions)(await runProcess(executable, ['models'], '', tmpdir(), 20000, signal));
   return [...base, ...models];
 }
