@@ -1,7 +1,7 @@
 {
   "id": "zotero-paper-import",
   "name": "Zotero Paper Import",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "minAppVersion": "1.13.4",
   "description": "Zoteroの論文を続けて選び、バックグラウンドで順番に命名・保存します。ノートとPDFを保管庫内にまとめて取り込めます。",
   "author": "edoaki",

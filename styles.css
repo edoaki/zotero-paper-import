@@ -42,3 +42,16 @@
 .zpi-connection-state[data-state="connected"] .setting-item-name { color: var(--text-success); }
 .zpi-connection-state[data-state="disconnected"] .setting-item-name { color: var(--text-warning); }
 .zpi-connection-state button[hidden] { display: none !important; }
+.zpi-cli-setup { border: 1px solid var(--background-modifier-border); border-radius: 8px; padding: 12px; margin: 12px 0; min-width: 0; }
+.zpi-cli-setup[data-state="found"] > .setting-item .setting-item-name { color: var(--text-success); }
+.zpi-cli-setup[data-state="missing"] > .setting-item .setting-item-name { color: var(--text-warning); }
+.zpi-cli-setup .setting-item { flex-wrap: wrap; gap: 8px; }
+.zpi-cli-setup .setting-item-info, .zpi-cli-setup .setting-item-control { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.zpi-cli-setup .setting-item-description { white-space: pre-wrap; }
+.zpi-cli-setup input, .zpi-cli-setup select { min-width: 0; max-width: 100%; }
+.zpi-cli-guide summary { cursor: pointer; font-weight: var(--font-semibold); }
+.zpi-cli-step { margin: 16px 0; }
+.zpi-cli-step p { margin: 6px 0; }
+.zpi-cli-step pre { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; padding: 10px; border-radius: 5px; background: var(--background-secondary); }
+.zpi-cli-step code { white-space: inherit; overflow-wrap: anywhere; }
+.zpi-cli-step .setting-item { border: 0; padding: 0; }

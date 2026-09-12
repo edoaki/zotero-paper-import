@@ -1,27 +1,16 @@
 import { spawn } from 'node:child_process';
-import { access, mkdtemp, readFile, writeFile, rm, readdir, mkdir } from 'node:fs/promises';
-import { constants } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { mkdtemp, readFile, writeFile, rm, mkdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { delimiter, dirname, join } from 'node:path';
 import { METHOD_RULE, parseAI, type Paper, type Settings, type Provider, type NameResult } from './core';
 import { ANTIGRAVITY_AGENT, antigravityArguments, antigravityInput, parseAntigravityOutput } from './antigravity';
-
-export async function detectCLI(provider: Provider, configured = ''): Promise<string> {
-  const command = provider === 'antigravity' ? 'agy' : provider;
-  const candidates = configured ? [configured.replace(/^~(?=\/)/, homedir())] : (process.env.PATH || '').split(delimiter).filter(Boolean).map(p => join(p, command));
-  if (!configured) {
-    for (const p of ['.local/bin', '.npm-global/bin', '.bun/bin', '.opencode/bin']) candidates.push(join(homedir(), p, command));
-    candidates.push('/opt/homebrew/bin/' + command, '/usr/local/bin/' + command);
-    try { for (const v of (await readdir(join(homedir(), '.nvm/versions/node'))).sort().reverse()) candidates.push(join(homedir(), '.nvm/versions/node', v, 'bin', command)); } catch { /* optional install */ }
-  }
-  for (const p of candidates) { try { await access(p, constants.X_OK); return p; } catch { /* next */ } }
-  throw new Error(`${command}が見つかりません。インストールとログインを済ませ、設定の「検出」を押してください。`);
-}
+import { detectCLI } from './cli';
+export { detectCLI } from './cli';
 export function runProcess(executable: string, args: string[], input: string, cwd: string, timeout: number, signal?: AbortSignal, extraEnv: NodeJS.ProcessEnv = {}): Promise<string> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) { reject(new Error('キャンセルしました')); return; }
     // A shell is never used. Prompts travel over stdin, not shell interpolation.
-    const child = spawn(executable, args, { cwd, shell: false, windowsHide: true, detached: process.platform !== 'win32', env: { ...process.env, PATH: [executable.slice(0, executable.lastIndexOf('/')), process.env.PATH || '', '/usr/local/bin', '/usr/bin', '/bin'].join(delimiter), ...extraEnv } });
+    const child = spawn(executable, args, { cwd, shell: false, windowsHide: true, detached: process.platform !== 'win32', env: { ...process.env, PATH: [dirname(executable), process.env.PATH || '', ...(process.platform === 'win32' ? [] : ['/usr/local/bin', '/usr/bin', '/bin'])].join(delimiter), ...extraEnv } });
     let stdout = '', stderr = '', settled = false;
     const stop = () => { try { if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, 'SIGKILL'); else child.kill('SIGKILL'); } catch { /* already stopped */ } };
     const finish = (err?: Error) => { if (settled) return; settled = true; clearTimeout(timer); signal?.removeEventListener('abort', abort); err ? reject(err) : resolve(stdout); };

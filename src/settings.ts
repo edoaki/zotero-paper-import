@@ -2,19 +2,21 @@ import { App, PluginSettingTab, Setting, Notice } from 'obsidian';
 import type ZoteroPaperImport from './main';
 import { DEFAULT_TEMPLATE, METHOD_RULE, parseAI, type NamingMode, type Provider, type Rule } from './core';
 import { FolderPicker } from './ui';
-import { detectCLI, runProcess, invokeAI } from './ai';
-import { tmpdir } from 'node:os';
+import { invokeAI } from './ai';
 import { defaultModels, discoverModels } from './models';
+import { CLISetup } from './cli-setup';
 
 export class ImportSettingsTab extends PluginSettingTab {
   private connectionTimer?: ReturnType<typeof setInterval>;
   private connectionAbort?: AbortController;
   private modelsAbort?: AbortController;
   private recheckConnection?: () => void;
+  private cliSetup?: CLISetup;
   constructor(app: App, private owner: ZoteroPaperImport) { super(app, owner); }
   hide(): void {
     clearInterval(this.connectionTimer);
     this.connectionAbort?.abort(); this.modelsAbort?.abort();
+    this.cliSetup?.dispose();
   }
   display(): void {
     this.hide();
@@ -28,11 +30,9 @@ export class ImportSettingsTab extends PluginSettingTab {
     if (s.naming !== 'author-year') {
       el.createEl('p', { cls: 'zpi-disclosure', text: 'AI命名にはCLIのインストール・ログインが必要です。書誌情報とPDFの抽出本文を選択したAIへ送信します。利用料金・制限はそのサービスに従います。' });
       new Setting(el).setName('使用するAI').addDropdown(d => d.addOption('codex', 'Codex').addOption('claude', 'Claude Code').addOption('opencode', 'OpenCode（実験的対応）').addOption('antigravity', 'Antigravity CLI（実験的対応）').setValue(s.provider).onChange(async v => { s.provider = v as Provider; s.cliPath = ''; s.model = ''; await p.saveSettings(); this.display(); }));
-      new Setting(el).setName('CLIの実行ファイル').setDesc('空欄なら自動検出。場所はこの端末だけに保存。').addText(t => t.setValue(s.cliPath).setPlaceholder('自動検出').onChange(async v => { s.cliPath = v; await p.saveSettings(); })).addButton(b => b.setButtonText('検出').onClick(async () => {
-        try { s.cliPath = await detectCLI(s.provider, s.cliPath); const v = await runProcess(s.cliPath, ['--version'], '', tmpdir(), 10000); await p.saveSettings(); this.display(); new Notice(v.trim().slice(0, 200)); } catch (e) { new Notice((e as Error).message, 10000); }
-      }));
-      if (s.provider === 'antigravity') el.createEl('p', { text: '公式のAntigravity CLI（agy）を使います。初回はターミナルでagyを開いてGoogleアカウントでログインしてください。モデル一覧もログイン後に取得できます。' });
-      this.models(el);
+      const cliContainer = el.createDiv();
+      const refreshModels = this.models(el);
+      this.cliSetup = new CLISetup(cliContainer, s, () => p.saveSettings(), () => { void refreshModels(); });
       new Setting(el).setName('AI接続テスト').setDesc('短いテスト文を送信します。利用枠を消費する場合があります。').addButton(b => b.setButtonText('テスト').onClick(async () => {
         b.setDisabled(true); try { parseAI(await invokeAI(s, 'Return only JSON: {"name":null,"reason":"Connection successful","evidence":"test"}')); new Notice('AIに接続できました'); } catch (e) { new Notice((e as Error).message, 12000); } finally { b.setDisabled(false); }
       }));
@@ -75,9 +75,9 @@ export class ImportSettingsTab extends PluginSettingTab {
     void check();
     this.connectionTimer = setInterval(() => { void check(); }, 8000);
   }
-  private models(el: HTMLElement): void {
+  private models(el: HTMLElement): () => Promise<void> {
     const p = this.owner, s = p.settings;
-    const row = new Setting(el).setName('モデル').setDesc('一覧から選んでください。迷ったら「自動」のままで使えます。');
+    const row = new Setting(el).setName('モデル').setDesc('CLIを検出するとモデル一覧を取得します。迷ったら「自動」のままで使えます。');
     let select!: HTMLSelectElement;
     const populate = (models: { value: string; label: string }[]) => {
       select.replaceChildren();
@@ -100,7 +100,7 @@ export class ImportSettingsTab extends PluginSettingTab {
       }
     };
     if (s.provider !== 'claude') row.addButton(b => b.setButtonText('一覧を更新').onClick(() => { void load(); }));
-    void load();
+    return load;
   }
   private rules(el: HTMLElement): void {
     const p = this.owner, s = p.settings;

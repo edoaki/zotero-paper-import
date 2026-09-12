@@ -53,3 +53,9 @@ PDFの選択や未取得の確認は「確認待ち」にし、自動でダイ�
 公式の `agy` を検出し、独立した一時フォルダに専用エージェント定義を生成します。標準入力のstream-jsonで本文を渡し、正常終了した単一のresultイベントから構造化出力を取得します。CLI未検出・未認証・返答不正時は既存の著者名＋年への代替処理を使います。旧Gemini設定と待ち行列内の設定はAntigravityへ移行し、CLIパスとモデル指定をクリアします。
 
 実装の参照：[公式のheadless仕様](https://antigravity.google/docs/cli/headless/)、[専用エージェントの仕様](https://antigravity.google/docs/subagents)。
+
+## CLIの導入案内
+
+AIの選択時に実行ファイルを検出し、見つからなければOS別の導入・ログイン手順を展開します。process.platformで初期のOSを決め、利用者が切り替えることもできます。コマンドは表示・コピーだけで自動実行しません。未導入の間は自動モデル取得を行わず、再検出後に取得します。
+
+公式の参照先：[Codex](https://learn.chatgpt.com/docs/codex/cli)、[Claude Code](https://code.claude.com/docs/en/setup)、[Antigravity CLI](https://antigravity.google/docs/cli/install/)、[OpenCode](https://opencode.ai/docs/)、[Scoop](https://github.com/ScoopInstaller/Install)。
