@@ -1,0 +1,9 @@
+.zpi-picker { min-width: min(640px, 85vw); }
+.zpi-results { max-height: 55vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.zpi-paper { display: flex; flex-direction: column; align-items: flex-start; text-align: left; height: auto; white-space: normal; padding: 12px; gap: 5px; }
+.zpi-paper strong { line-height: 1.4; }
+.zpi-meta, .zpi-status { color: var(--text-muted); font-size: var(--font-ui-small); }
+.zpi-status { white-space: pre-wrap; }
+.zpi-settings .zpi-template { width: min(600px, 70vw); font-family: var(--font-monospace); font-size: var(--font-smaller); }
+.zpi-disclosure { padding: 12px; border-left: 3px solid var(--interactive-accent); background: var(--background-secondary); border-radius: 4px; }
+.zpi-settings details { margin: 20px 0; }

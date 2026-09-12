@@ -1,0 +1,10 @@
+{
+  "id": "zotero-paper-import",
+  "name": "Zotero Paper Import",
+  "version": "0.1.0",
+  "minAppVersion": "1.13.4",
+  "description": "Import Zotero papers into folders containing a note and PDFs, with optional AI naming via your CLI.",
+  "author": "edoaki",
+  "authorUrl": "https://github.com/edoaki",
+  "isDesktopOnly": true
+}

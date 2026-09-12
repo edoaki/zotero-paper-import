@@ -1,0 +1,21 @@
+{
+  "name": "zotero-paper-import",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Import Zotero papers as folders containing a Markdown note and PDFs.",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "check": "npm run typecheck && npm test && npm run build",
+    "package": "node scripts/package.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "esbuild": "0.28.2",
+    "obsidian": "1.13.1",
+    "tsx": "^4.20.0",
+    "typescript": "7.0.2"
+  },
+  "dependencies": { "pdfjs-dist": "6.3.289" }
+}
