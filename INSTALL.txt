@@ -24,4 +24,4 @@ Obsidianの設定画面へZIPやフォルダをドラッグしてもインスト
 コピー後、再読み込みしてスイッチをオンにします。
 
 詳しい手順：
-https://github.com/edoaki/zotero-paper-import#macでの入れ方
+https://github.com/edoaki/zotero-paper-import/blob/main/docs/INSTALL.md
