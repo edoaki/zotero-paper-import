@@ -6,6 +6,7 @@ import { invokeAI } from './ai';
 import { defaultModels, discoverModels } from './models';
 import { CLISetup } from './cli-setup';
 import { ORGANIZE_RULE } from './organization';
+import { paperPaths } from './layout';
 
 export class ImportSettingsTab extends PluginSettingTab {
   private connectionTimer?: ReturnType<typeof setInterval>;
@@ -26,12 +27,17 @@ export class ImportSettingsTab extends PluginSettingTab {
     new Setting(el).setName('Zotero Paper Import').setHeading();
     el.createEl('p', { text: '1コマンドで、論文ノートとPDFをセットで保存します。' });
     this.connection(el);
-    new Setting(el).setName('保存先').setDesc('保管庫内のフォルダを選択、または入力。').addText(t => t.setPlaceholder('例：文献').setValue(s.folder).onChange(async v => { s.folder = v; await p.saveSettings(); })).addButton(b => b.setButtonText('選択').onClick(() => new FolderPicker(this.app, path => { s.folder = path; void p.saveSettings(); this.display(); }).open()));
+    const layout = el.createEl('p', { cls: 'zpi-status' });
+    const describe = () => { try { const paths = paperPaths(s); layout.setText(`取り込み先・整理対象：${paths.inbox}\n分類先：${paths.root} 内の各分類フォルダ`); } catch { layout.setText('文献の親フォルダを指定してください。'); } };
+    new Setting(el).setName('文献の親フォルダ').setDesc('ここを1つ選ぶと、取り込み先と整理対象が決まります。既存の論文は自動では移動しません。').addText(t => t.setPlaceholder('例：文献').setValue(s.folder).onChange(async v => { s.folder = v; describe(); await p.saveSettings(); })).addButton(b => b.setButtonText('選択').onClick(() => new FolderPicker(this.app, path => { s.folder = path; void p.saveSettings(); this.display(); }).open()));
+    describe();
+    const former = s.legacyFolders.filter(path => path !== s.folder && !path.startsWith(s.folder + '/'));
+    if (former.length) el.createEl('p', { cls: 'zpi-status', text: `旧設定の場所：${former.join('、')}。取り込み済み照合とキー補完の対象です。整理したい論文は新しい未整理フォルダへ移動してください。` });
+    const advanced = el.createEl('details'); advanced.createEl('summary', { text: '未整理フォルダの名前を変える' });
+    new Setting(advanced).setName('親フォルダ内での名前').addText(t => t.setValue(s.inboxName).setPlaceholder('未整理').onChange(async v => { s.inboxName = v; describe(); await p.saveSettings(); }));
+    new Setting(el).setName('既存ノートのZoteroキー').setDesc('DOI・arXiv IDでZoteroと照合し、キーがないノートを補完します。').addButton(b => b.setButtonText('キーを補完').onClick(() => p.openKeyCompletion()));
     new Setting(el).setName('命名方式').addDropdown(d => d.addOption('author-year', '著者名＋年（AI不要）').addOption('method', '手法名（AI）').addOption('custom', '自分のルール（AI）').setValue(s.naming).onChange(async v => { s.naming = v as NamingMode; await p.saveSettings(); this.display(); }));
     new Setting(el).setName('整理の設定').setHeading();
-    for (const [key, name, placeholder] of [['organizeRoot', '分類先の親フォルダ', s.folder || '例：文献'], ['organizeInbox', '未整理フォルダ', `${s.organizeRoot || s.folder || '文献'}/未整理`]] as const) {
-      new Setting(el).setName(name).setDesc('空欄の場合は例示の場所を使います。保管庫内のフォルダを選択できます。').addText(t => t.setPlaceholder(placeholder).setValue(s[key]).onChange(async v => { s[key] = v; await p.saveSettings(); })).addButton(b => b.setButtonText('選択').onClick(() => new FolderPicker(this.app, path => { s[key] = path; void p.saveSettings(); this.display(); }).open()));
-    }
     el.createEl('p', { text: '未整理フォルダ直下の論文フォルダを整理します。分類先の説明は各フォルダの「分類.md」から読み、必要なら新しい分類フォルダと説明を作ります。' });
     const criteria = el.createEl('details'); criteria.createEl('summary', { text: '分類の判断ルール' });
     const ruleEditor = new Setting(criteria); ruleEditor.settingEl.addClass('zpi-template-editor');

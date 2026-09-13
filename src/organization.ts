@@ -1,5 +1,6 @@
 import { safeName, validateFolder, type Settings } from './core';
 import type { JobProgress } from './queue';
+import { paperPaths } from './layout';
 
 export interface OrganizePaths { inbox: string; root: string }
 export interface OrganizePaper { folder: string; notePath: string; title: string; created: number }
@@ -10,7 +11,8 @@ export interface Category { path: string; description: string }
 export interface Classification { category: string | null; create: boolean; description: string; reason: string }
 export interface OrganizationRecord {
   id: string; title: string; from: string; to: string; noteName: string; created: number;
-  reason: string; date: string; state: 'prepared' | 'done' | 'restoring' | 'undone' | 'failed' | 'unchanged';
+  reason: string; date: string; state: 'prepared' | 'done' | 'restoring' | 'undone' | 'failed' | 'unchanged' | 'superseded';
+  manual?: boolean; replaces?: string;
   previousRouting?: unknown; previousMarker?: unknown; error?: string;
   newCategory?: { path: string; description: string };
 }
@@ -29,6 +31,7 @@ export const CLASSIFICATION_SCHEMA = { type: 'object', properties: {
   category: { type: ['string', 'null'] }, create: { type: 'boolean' }, description: { type: 'string' }, reason: { type: 'string' },
 }, required: ['category', 'create', 'description', 'reason'], additionalProperties: false };
 export function organizePaths(settings: Settings): OrganizePaths {
+  if (settings.layoutVersion === 1) return paperPaths(settings);
   const root = validateFolder(settings.organizeRoot || settings.folder);
   const inbox = validateFolder(settings.organizeInbox || `${root}/未整理`);
   if (root === inbox || root.startsWith(inbox + '/')) throw new Error('分類先の親フォルダには、未整理フォルダ自体やその内側を指定できません。');
@@ -55,6 +58,17 @@ export class Organizer {
     return { folder, notePath: `${folder}/${record.noteName}`, title: record.title, created: 0 };
   }
   async organize(id: string, paper: OrganizePaper, paths: OrganizePaths, decide: (snapshot: PaperSnapshot) => Promise<Classification>, progress: JobProgress): Promise<string> {
+    if (!paper.folder.startsWith(paths.inbox + '/') || paper.folder.slice(paths.inbox.length + 1).includes('/')) throw new Error('この論文は指定した未整理フォルダの直下にありません。');
+    return this.perform(id, paper, paths, decide, progress);
+  }
+  async changeCategory(id: string, recordId: string, paper: OrganizePaper, paths: OrganizePaths, category: string, progress: JobProgress): Promise<string> {
+    validateFolder(category);
+    const current = await this.io.readPaper(paper);
+    if (current.marker !== recordId) throw new Error('整理結果と現在の論文が一致しません。一覧を更新してください。');
+    if (`${paths.root}/${category}` === paper.folder.slice(0, paper.folder.lastIndexOf('/'))) return paper.notePath;
+    return this.perform(id, paper, paths, async () => ({ category, create: false, description: '', reason: `利用者が分類先を「${category}」に変更しました。` }), progress, recordId);
+  }
+  private async perform(id: string, paper: OrganizePaper, paths: OrganizePaths, decide: (snapshot: PaperSnapshot) => Promise<Classification>, progress: JobProgress, replaces?: string): Promise<string> {
     const previous = this.records.find(r => r.id === id);
     if (previous?.state === 'done') {
       const current = await this.io.readPaper(this.at(previous, previous.to));
@@ -62,14 +76,13 @@ export class Organizer {
       throw new Error('前回の移動結果が変更されています。整理結果を確認してください。');
     }
     if (previous && ['prepared', 'restoring'].includes(previous.state)) throw new Error('前回の移動が中断しています。整理結果を確認してからプラグインを読み込み直してください。');
-    if (!paper.folder.startsWith(paths.inbox + '/') || paper.folder.slice(paths.inbox.length + 1).includes('/')) throw new Error('この論文は指定した未整理フォルダの直下にありません。');
     const snapshot = await this.io.readPaper(paper);
-    if (snapshot.routing === 'manual') throw new Error('手動分類として固定されているため移動しません。');
+    if (snapshot.routing === 'manual' && !replaces) throw new Error('手動分類として固定されているため移動しません。');
     const decision = await decide(snapshot);
     progress.controller.signal.throwIfAborted();
     if ((await this.io.readPaper(paper)).fingerprint !== snapshot.fingerprint) throw new Error('分類中に論文が編集・変更されたため、移動せず停止しました。再度選択してください。');
     const record: OrganizationRecord = { id, title: paper.title, from: paper.folder, to: paper.folder, noteName: paper.notePath.slice(paper.folder.length + 1), created: paper.created,
-      reason: decision.reason, date: new Date().toISOString(), state: decision.category === null ? 'unchanged' : 'prepared', previousRouting: snapshot.routing, previousMarker: snapshot.marker };
+      reason: decision.reason, date: new Date().toISOString(), state: decision.category === null ? 'unchanged' : 'prepared', previousRouting: snapshot.routing, previousMarker: snapshot.marker, manual: !!replaces, replaces };
     if (decision.category !== null) {
       const categoryPath = `${paths.root}/${decision.category}`;
       if (categoryPath === paths.inbox || categoryPath.startsWith(paths.inbox + '/') || paths.inbox.startsWith(categoryPath + '/')) throw new Error('未整理フォルダを分類先にはできません。');
@@ -89,7 +102,9 @@ export class Organizer {
       if (record.newCategory) await this.io.createCategory(record.newCategory.path, record.newCategory.description);
       await this.io.mark(snapshot, record);
       await this.io.move(record.from, record.to); moved = true;
-      record.state = 'done'; await this.save();
+      record.state = 'done';
+      const replaced = this.records.find(r => r.id === replaces); if (replaced) replaced.state = 'superseded';
+      await this.save();
       return `${record.to}/${record.noteName}`;
     } catch (e) {
       if (moved) { record.state = 'done'; record.error = '移動は完了しましたが、履歴保存を完了できませんでした。'; }
@@ -106,31 +121,7 @@ export class Organizer {
       throw e;
     }
   }
-  async undo(id: string, progress: JobProgress): Promise<string> {
-    const record = this.records.find(r => r.id === id);
-    if (!record || record.state !== 'done') throw new Error('元に戻せる整理結果がありません。');
-    const paper = await this.io.readPaper(this.at(record, record.to));
-    if (paper.marker !== id || paper.routing !== 'classified') throw new Error('整理後に論文の識別情報や分類状態が変わりました。現在の内容を保持して停止しました。');
-    if (await this.io.inspect(record.from)) throw new Error('元の場所に同名のファイル・フォルダがあります。上書きせず停止しました。');
-    progress.controller.signal.throwIfAborted();
-    record.state = 'restoring';
-    try { await this.save(); } catch (e) { record.state = 'done'; throw e; }
-    progress.commit(); progress.update('元の場所へ戻しています…');
-    let moved = false;
-    try {
-      await this.io.move(record.to, record.from); moved = true;
-      await this.io.restoreMetadata(await this.io.readPaper(this.at(record, record.from)), record);
-      record.state = 'undone'; delete record.error;
-      if (record.newCategory) await this.io.cleanupCategory(record.newCategory);
-      await this.save();
-      return `${record.from}/${record.noteName}`;
-    } catch (e) {
-      if (!moved) record.state = 'done';
-      record.error = (e as Error).message;
-      try { await this.save(); } catch { /* recovery uses the saved restoring state */ }
-      throw e;
-    }
-  }
+  // On startup inspect incomplete records only. Never reverse moves or restore old files.
   async recover(): Promise<void> {
     let changed = false;
     for (const record of this.records.filter(r => r.state === 'prepared' || r.state === 'restoring')) {
@@ -140,12 +131,12 @@ export class Organizer {
           const paper = await this.io.readPaper(this.at(record, record.to));
           if (paper.marker !== record.id) continue;
           record.state = 'done'; changed = true;
+          const replaced = this.records.find(r => r.id === record.replaces); if (replaced) replaced.state = 'superseded';
         } else if (source === 'folder' && !destination) {
           const paper = await this.io.readPaper(this.at(record, record.from));
-          if (paper.marker === record.id) await this.io.restoreMetadata(paper, record);
-          else if (JSON.stringify(paper.marker) !== JSON.stringify(record.previousMarker)) continue;
+          if (paper.marker !== record.id && JSON.stringify(paper.marker) !== JSON.stringify(record.previousMarker)) continue;
           record.state = record.state === 'restoring' ? 'undone' : 'failed';
-          if (record.newCategory) await this.io.cleanupCategory(record.newCategory);
+          record.error = '中断した処理です。現在のノートと配置を保持しています。';
           changed = true;
         }
       } catch { /* conflicting changes require manual resolution; don't guess */ }

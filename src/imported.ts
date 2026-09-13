@@ -1,14 +1,15 @@
 import { identity, readRecord, type Paper, type ZoteroItem } from './core';
 
 /** Match old Zotlit notes as well as plugin records, without matching titles. */
+export interface ImportMatch { path?: string; reason: string }
 export class ImportedPapers {
-  private managed = new Set<string>();
-  private legacy = new Set<string>();
-  private identifiers = new Set<string>();
-  add(frontmatter: Record<string, unknown>, text = ''): void {
+  private managed = new Map<string, ImportMatch>();
+  private legacy = new Map<string, ImportMatch>();
+  private identifiers = new Map<string, ImportMatch>();
+  add(frontmatter: Record<string, unknown>, text = '', path?: string): void {
     const record = readRecord(frontmatter);
     if (record) {
-      this.managed.add(`${record.serverId}:${record.library}:${record.key}`);
+      this.managed.set(`${record.serverId}:${record.library}:${record.key}`, { path, reason: 'Zoteroのライブラリ・キーと取り込み情報が一致' });
       return;
     }
     // A damaged managed record must not fall back to a less precise identity.
@@ -24,7 +25,7 @@ export class ImportedPapers {
       // Citation stubs can already contain a local PDF but not yet have a Zotero key.
       // Only use explicit identifier properties, never links to other papers in the body.
       const scope = library || (!declared ? 'users/0' : undefined);
-      if (scope) for (const id of paperIdentifiers(frontmatter)) this.identifiers.add(`${scope}:${id}`);
+      if (scope) for (const id of paperIdentifiers(frontmatter)) this.identifiers.set(`${scope}:${id}`, { path, reason: 'キー未設定の既存ノートとDOI・arXiv IDが一致' });
       return;
     }
     if (typeof key !== 'string' || !/^[A-Z0-9]{8}$/.test(key)) return;
@@ -36,11 +37,14 @@ export class ImportedPapers {
     library = libraries.values().next().value;
     // Historical Zotlit notes in a personal library often contain only a key.
     if (!library && !declared) library = 'users/0';
-    if (library) this.legacy.add(`${library}:${key}`);
+    if (library) this.legacy.set(`${library}:${key}`, { path, reason: '既存ノートのZoteroキーとライブラリが一致' });
   }
   has(paper: Paper): boolean {
-    return this.managed.has(identity(paper)) || this.legacy.has(`${paper.library}:${paper.item.key}`)
-      || paperIdentifiers(paper.item.data).some(id => this.identifiers.has(`${paper.library}:${id}`));
+    return !!this.match(paper);
+  }
+  match(paper: Paper): ImportMatch | undefined {
+    return this.managed.get(identity(paper)) || this.legacy.get(`${paper.library}:${paper.item.key}`)
+      || paperIdentifiers(paper.item.data).map(id => this.identifiers.get(`${paper.library}:${id}`)).find(Boolean);
   }
 }
 
@@ -79,15 +83,15 @@ export async function unimportedPage(
   fetchPage: (start: number) => Promise<{ items: ZoteroItem[]; hasMore: boolean }>,
   alreadyImported: (item: ZoteroItem) => boolean,
   signal: AbortSignal,
-): Promise<{ items: ZoteroItem[]; hidden: number; hasMore: boolean }> {
-  const result = { items: [] as ZoteroItem[], hidden: 0, hasMore: false };
+): Promise<{ items: ZoteroItem[]; hidden: number; hiddenItems: ZoteroItem[]; hasMore: boolean }> {
+  const result = { items: [] as ZoteroItem[], hiddenItems: [] as ZoteroItem[], hidden: 0, hasMore: false };
   let start = 0;
   do {
     signal.throwIfAborted();
     const page = await fetchPage(start);
     signal.throwIfAborted();
     for (const item of page.items) {
-      if (alreadyImported(item)) result.hidden++;
+      if (alreadyImported(item)) { result.hidden++; result.hiddenItems.push(item); }
       else result.items.push(item);
     }
     result.hasMore = page.hasMore; start += 100;

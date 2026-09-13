@@ -10,12 +10,17 @@ import { SerialQueue, NeedsInput, JOB_LABELS, type QueueJob, type JobProgress } 
 import { Organizer, organizePaths, parseClassification, CLASSIFICATION_SCHEMA, ORGANIZE_RULE, type OrganizePaper } from './organization';
 import { OrganizationStore } from './organization-store';
 import { OrganizePicker, OrganizationHistoryModal } from './organization-ui';
+import { KeyCompletionModal } from './key-ui';
+import { migrateLayout, paperPaths, literatureFolders } from './layout';
 
 export interface ImportTask {
   kind: 'import' | 'refresh' | 'rename'; paper: Paper; settings: Settings; selectedPDFKeys?: string[]; noteOnly?: boolean;
 }
 export interface TaskInput { kind: 'select-pdf' | 'missing-pdf'; attachments?: ZoteroItem[]; reason?: string }
-export type Task = ImportTask | { kind: 'organize'; paper: OrganizePaper; settings: Settings } | { kind: 'undo'; recordId: string; settings: Settings };
+export type Task = ImportTask | { kind: 'organize'; paper: OrganizePaper; settings: Settings } | { kind: 'undo'; recordId: string; settings: Settings }
+  | { kind: 'change-category'; recordId: string; expectedFolder: string; category: string; settings: Settings }
+  | { kind: 'complete-key'; notePath: string; library: string; settings: Settings };
+function isImportTask(task: Task): task is ImportTask { return ['import','refresh','rename'].includes(task.kind); }
 
 export default class ZoteroPaperImport extends Plugin {
   declare settings: Settings;
@@ -30,6 +35,7 @@ export default class ZoteroPaperImport extends Plugin {
   private queueModal?: QueueModal<Task>;
   private organizePicker?: OrganizePicker;
   private organizationHistory?: OrganizationHistoryModal;
+  private keyModal?: KeyCompletionModal;
   private readonly queueStorageKey = 'zotero-paper-import:queue';
   async onload(): Promise<void> {
     // Older versions did not close their picker on unload; retire only our own stale dialogs.
@@ -41,7 +47,7 @@ export default class ZoteroPaperImport extends Plugin {
     const previousDefault = DEFAULT_SETTINGS.template.replace('## 要旨', '## Abstract').replace('## 命名の根拠', '## Naming');
     if (data?.template === previousDefault) data.template = DEFAULT_SETTINGS.template;
     this.settings = { ...structuredClone(DEFAULT_SETTINGS), ...(data || {}), ...this.app.loadLocalStorage(this.manifest.id + ':device') };
-    const migrated = migrateAISettings(this.settings);
+    const migrated = migrateLayout(migrateAISettings(this.settings));
     if (migrated !== this.settings) { this.settings = migrated; await this.saveSettings(); }
     this.store = new VaultStorage(this.app, this.manifest.id);
     this.importer = new Importer(this.store);
@@ -53,7 +59,7 @@ export default class ZoteroPaperImport extends Plugin {
     } catch (e) { this.organizationError = (e as Error).message; }
     this.queue = new SerialQueue((job, progress) => this.runTask(job, progress));
     const saved = this.app.loadLocalStorage(this.queueStorageKey);
-    if (Array.isArray(saved)) this.queue.restore(saved.filter(j => j?.id && j?.key && j?.payload?.settings && (j.payload.paper?.item?.key || j.payload.kind === 'organize' && j.payload.paper?.notePath || j.payload.kind === 'undo' && j.payload.recordId) && j.state in JOB_LABELS).map(j => ({ ...j, payload: { ...j.payload, settings: migrateAISettings({ ...DEFAULT_SETTINGS, ...j.payload.settings }) } })));
+    if (Array.isArray(saved)) this.queue.restore(saved.filter(j => j?.id && j?.key && j?.payload?.settings && (j.payload.paper?.item?.key || j.payload.kind === 'organize' && j.payload.paper?.notePath || ['undo','change-category'].includes(j.payload.kind) && j.payload.recordId || j.payload.kind === 'complete-key' && j.payload.notePath) && j.state in JOB_LABELS).map(j => ({ ...j, ...(j.payload.kind === 'undo' ? { state: 'cancelled', progress: '旧版の「元に戻す」は廃止されました。この処理は実行しません。' } : {}), payload: { ...j.payload, settings: migrateLayout(migrateAISettings({ ...DEFAULT_SETTINGS, ...j.payload.settings })) } })));
     const status = this.addStatusBarItem();
     status.addClass('zpi-statusbar'); status.setAttribute('role', 'button'); status.tabIndex = 0;
     const updateQueue = () => {
@@ -72,13 +78,14 @@ export default class ZoteroPaperImport extends Plugin {
     this.addRibbonIcon('download', 'Zotero Paper Import', () => { void this.openPicker(); });
     this.addCommand({ id: 'import-paper', name: 'Zoteroから論文を取り込む', callback: () => { void this.openPicker(); } });
     this.addCommand({ id: 'organize-paper', name: '未整理の文献を整理する', callback: () => this.openOrganizePicker() });
-    this.addCommand({ id: 'organization-history', name: '整理結果・元に戻す', callback: () => this.openOrganizationHistory() });
+    this.addCommand({ id: 'organization-history', name: '整理結果・分類先を変更', callback: () => this.openOrganizationHistory() });
+    this.addCommand({ id: 'complete-zotero-key', name: '既存ノートのZoteroキーを補完', callback: () => this.openKeyCompletion() });
     this.addCommand({ id: 'refresh-paper', name: 'この論文の情報・PDFを更新', callback: () => { void this.refreshActive(false); } });
     this.addCommand({ id: 'rename-paper', name: 'この論文を現在の命名設定で改名', callback: () => { void this.refreshActive(true); } });
     this.addCommand({ id: 'queue', name: '取り込み・整理の処理状況を開く', callback: () => this.openQueue() });
     this.addCommand({ id: 'setup', name: 'Zoteroとの接続を設定', callback: () => this.showSetup() });
   }
-  onunload(): void { this.picker?.close(); this.organizePicker?.close(); this.organizationHistory?.close(); this.queueModal?.close(); this.queue?.dispose(); }
+  onunload(): void { this.picker?.close(); this.organizePicker?.close(); this.organizationHistory?.close(); this.keyModal?.close(); this.queueModal?.close(); this.queue?.dispose(); }
   client(): ZoteroClient { return new ZoteroClient(this.settings.port); }
   async saveSettings(): Promise<void> {
     const { cliPath, port, ...shared } = this.settings;
@@ -116,8 +123,8 @@ export default class ZoteroPaperImport extends Plugin {
   async openPicker(): Promise<void> {
     try { validateFolder(this.settings.folder); } catch { this.openSettings(); new Notice('最初に保存先を指定してください'); return; }
     const client = this.client();
-    this.picker?.close(); this.organizePicker?.close();
-    this.picker = new PaperPicker(this.app, client, this.queue, paper => this.enqueuePaper(paper), () => this.openQueue(), () => this.store.importedPapers([this.settings.folder, this.settings.organizeRoot, this.settings.organizeInbox].filter(Boolean)), () => this.openOrganizePicker(), () => this.showSetup());
+    this.picker?.close(); this.organizePicker?.close(); this.keyModal?.close();
+    this.picker = new PaperPicker(this.app, client, this.queue, paper => this.enqueuePaper(paper), () => this.openQueue(), () => this.store.importedPapers(literatureFolders(this.settings)), () => this.openOrganizePicker(), () => this.showSetup());
     this.picker.open();
   }
   private async collectPDFs(client: ZoteroClient, paper: Paper, progress: JobProgress, task: ImportTask, tracked?: StoredNote): Promise<{ pdfs: PDFInput[]; reason: string }> {
@@ -174,9 +181,9 @@ export default class ZoteroPaperImport extends Plugin {
     const request = job.input as TaskInput | undefined;
     if (request?.kind === 'select-pdf' && request.attachments?.length) {
       const selected = await chooseAttachments(this.app, request.attachments);
-      if (selected?.length) this.queue.retry(job.id, task => { if (task.kind !== 'organize' && task.kind !== 'undo') task.selectedPDFKeys = selected.map(a => a.key); });
+      if (selected?.length) this.queue.retry(job.id, task => { if (isImportTask(task)) task.selectedPDFKeys = selected.map(a => a.key); });
     } else if (request?.kind === 'missing-pdf') {
-      this.queue.retry(job.id, task => { if (task.kind !== 'organize' && task.kind !== 'undo') task.noteOnly = true; });
+      this.queue.retry(job.id, task => { if (isImportTask(task)) task.noteOnly = true; });
     }
   }
   async refreshActive(rename: boolean): Promise<void> {
@@ -193,8 +200,19 @@ export default class ZoteroPaperImport extends Plugin {
   private async runTask(job: QueueJob<Task>, progress: JobProgress): Promise<string> {
     const task = job.payload, settings = task.settings;
     if (task.kind === 'undo') {
+      throw new Error('「元に戻す」は廃止されました。整理結果から現在の分類先を変更してください。');
+    }
+    if (task.kind === 'complete-key') {
+      if (!literatureFolders(settings).some(root => task.notePath.startsWith(root + '/'))) throw new Error('ノートが文献フォルダの外へ移動しました。一覧を更新してください。');
+      return this.store.completeKey(task.notePath, task.library, new ZoteroClient(settings.port), progress);
+    }
+    if (task.kind === 'change-category') {
       if (this.organizationError) throw new Error(this.organizationError);
-      return await this.organizer.undo(task.recordId, progress);
+      const paths = paperPaths(settings), paper = await this.organizationStore.locate(task.recordId);
+      if (paper.folder !== task.expectedFolder) throw new Error('選択後に論文の場所が変わりました。現在の場所を確認して選び直してください。');
+      const categories = await this.organizationStore.categories(paths);
+      if (!categories.some(c => c.path === task.category)) throw new Error('選択した分類先が変更・削除されました。一覧を更新してください。');
+      return this.organizer.changeCategory(job.id, task.recordId, paper, paths, task.category, progress);
     }
     if (task.kind === 'organize') {
       if (this.organizationError) throw new Error(this.organizationError);
@@ -219,7 +237,7 @@ export default class ZoteroPaperImport extends Plugin {
     const paper = await client.paper(task.paper.item.key, task.paper.library, progress.controller.signal);
     let note = await this.importer.find(paper);
     if (task.kind === 'import' && note) return note.path;
-    if (task.kind === 'import' && (await this.store.importedPapers([settings.folder, settings.organizeRoot, settings.organizeInbox].filter(Boolean))).has(paper)) throw new Error('この論文に対応する既存ノートがあります。重複作成せず停止しました。取り込み一覧を開き直してください。');
+    if (task.kind === 'import' && (await this.store.importedPapers(literatureFolders(settings))).has(paper)) throw new Error('この論文に対応する既存ノートがあります。重複作成せず停止しました。取り込み一覧を開き直してください。');
     if (task.kind !== 'import' && !note) throw new Error('更新対象のノートが見つかりません。');
     if (note) generatedBounds(note.text);
     const result = await this.collectPDFs(client, paper, progress, task, note);
@@ -232,7 +250,7 @@ export default class ZoteroPaperImport extends Plugin {
     progress.update('保存・検証中…'); progress.commit();
     let path: string;
     if (task.kind === 'import') {
-      path = (await this.importer.import(paper, settings, name!, result.pdfs, result.reason)).path;
+      path = (await this.importer.import(paper, { ...settings, folder: paperPaths(settings).inbox }, name!, result.pdfs, result.reason)).path;
     } else {
       // Personal writing may have changed while the AI was running. Read it again before committing.
       note = await this.importer.find(paper);
@@ -269,7 +287,7 @@ export default class ZoteroPaperImport extends Plugin {
     // No raw CLI output, prompts, credentials, or attachment paths are logged.
   }
   openOrganizePicker(): void {
-    this.picker?.close(); this.organizePicker?.close();
+    this.picker?.close(); this.organizePicker?.close(); this.keyModal?.close();
     this.organizePicker = new OrganizePicker(this.app, this); this.organizePicker.open();
   }
   openOrganizationHistory(): void {
@@ -283,12 +301,19 @@ export default class ZoteroPaperImport extends Plugin {
       this.queue.add('organize:' + paper.folder, `${paper.title}（整理）`, { kind: 'organize', paper, settings: this.settings });
     } catch (e) { this.showError(e); }
   }
-  enqueueUndo(recordId: string): void {
+  enqueueCategoryChange(recordId: string, expectedFolder: string, category: string): void {
     try {
       if (this.organizationError) throw new Error(this.organizationError);
       const record = this.organizer.records.find(r => r.id === recordId);
-      if (!record || record.state !== 'done') throw new Error('元に戻せる整理結果がありません。');
-      this.queue.add('undo:' + recordId, `${record.title}（元に戻す）`, { kind: 'undo', recordId, settings: this.settings });
+      if (!record || record.state !== 'done') throw new Error('分類先を変更できる整理結果がありません。一覧を更新してください。');
+      this.queue.add('change-category:' + recordId, `${record.title}（分類先変更）`, { kind: 'change-category', recordId, expectedFolder, category, settings: this.settings });
     } catch (e) { this.showError(e); }
+  }
+  openKeyCompletion(): void {
+    this.picker?.close(); this.organizePicker?.close(); this.keyModal?.close();
+    this.keyModal = new KeyCompletionModal(this.app, this); this.keyModal.open();
+  }
+  enqueueKeyCompletion(notePath: string, title: string, library: string): void {
+    this.queue.add('complete-key:' + notePath, `${title}（Zoteroキー補完）`, { kind: 'complete-key', notePath, library, settings: this.settings });
   }
 }

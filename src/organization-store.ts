@@ -3,6 +3,7 @@ import { sha256, MAX_PDF_BYTES } from './zotero';
 import { VaultStorage, frontmatter } from './storage';
 import { validateFolder } from './core';
 import type { Category, OrganizationIO, OrganizationRecord, OrganizePaper, OrganizePaths, PaperSnapshot } from './organization';
+import type { Problem } from './problems';
 
 export class OrganizationStore implements OrganizationIO {
   private path: string;
@@ -16,7 +17,7 @@ export class OrganizationStore implements OrganizationIO {
     const records = JSON.parse(this.journalText);
     if (!Array.isArray(records)) throw new Error('整理履歴の形式が不正です。既存ファイルを保持しました。');
     for (const r of records) {
-      if (!r || typeof r.id !== 'string' || typeof r.title !== 'string' || typeof r.reason !== 'string' || typeof r.noteName !== 'string' || !r.noteName.endsWith('.md') || /[/\\]/.test(r.noteName) || !['prepared','done','restoring','undone','failed','unchanged'].includes(r.state)) throw new Error('整理履歴に不正な情報があります。ファイルを保持しました。');
+      if (!r || typeof r.id !== 'string' || typeof r.title !== 'string' || typeof r.reason !== 'string' || typeof r.noteName !== 'string' || !r.noteName.endsWith('.md') || /[/\\]/.test(r.noteName) || !['prepared','done','restoring','undone','failed','unchanged','superseded'].includes(r.state)) throw new Error('整理履歴に不正な情報があります。ファイルを保持しました。');
       validateFolder(r.from); validateFolder(r.to); validateFolder(r.noteName);
       if (r.newCategory && (validateFolder(r.newCategory.path) !== r.to.slice(0, r.to.lastIndexOf('/')) || typeof r.newCategory.description !== 'string')) throw new Error('整理履歴の分類先が不正です。');
     }
@@ -44,19 +45,38 @@ export class OrganizationStore implements OrganizationIO {
     return undefined;
   }
   async candidates(paths: OrganizePaths): Promise<OrganizePaper[]> {
+    return (await this.scan(paths)).papers;
+  }
+  async scan(paths: OrganizePaths): Promise<{ papers: OrganizePaper[]; skipped: Problem[] }> {
     const inbox = this.app.vault.getAbstractFileByPath(paths.inbox);
-    if (!inbox) return [];
+    if (!inbox) return { papers: [], skipped: [{ path: paths.inbox, reason: '未整理フォルダはまだありません。', action: '論文を取り込むと自動で作成されます。' }] };
     if (!(inbox instanceof TFolder)) throw new Error('未整理の場所にはフォルダを指定してください。');
     const papers: OrganizePaper[] = [];
+    const skipped: Problem[] = [];
     for (const folder of inbox.children) {
-      if (!(folder instanceof TFolder)) continue;
-      const file = this.note(folder); if (!file) continue;
-      const text = await this.app.vault.cachedRead(file), fm = this.metadata(text);
-      if (fm.routing === 'manual') continue;
+      if (!(folder instanceof TFolder)) {
+        if (folder.name !== '分類.md') skipped.push({ path: folder.path, reason: '論文フォルダの外に置かれています。', action: '論文ごとのフォルダを作り、ノートとPDFを中へまとめてください。' });
+        continue;
+      }
+      const file = this.note(folder);
+      if (!file) {
+        const count = folder.children.filter(f => f instanceof TFile && f.extension === 'md' && f.name !== '分類.md').length;
+        skipped.push({ path: folder.path, reason: count > 1 ? 'ノートが複数あり、論文を1件に特定できません。' : count === 0 ? '論文ノートがありません。' : 'PDFもZoteroの識別情報も見つかりません。', action: '1つの論文フォルダにノート1枚とPDFをまとめるか、ノートのZoteroキーを確認してください。' }); continue;
+      }
+      const text = await this.app.vault.cachedRead(file);
+      let fm: Record<string, unknown>;
+      try { fm = this.metadata(text); } catch { skipped.push({ path: file.path, reason: 'ノートのプロパティを読み取れません。', action: 'ノート先頭のプロパティの形式を確認してから、一覧を更新してください。' }); continue; }
+      if (fm.routing === 'manual') { skipped.push({ path: file.path, reason: '手動で分類先を固定した論文です。', action: '整理結果から分類先を変更するか、Obsidianのファイル一覧で移動してください。' }); continue; }
       const title = typeof fm.title === 'string' ? fm.title : text.match(/^# (.+)$/m)?.[1] || folder.name;
       papers.push({ folder: folder.path, notePath: file.path, title, created: file.stat.ctime });
     }
-    return papers.sort((a, b) => a.title.localeCompare(b.title, 'ja'));
+    return { papers: papers.sort((a, b) => a.title.localeCompare(b.title, 'ja')), skipped };
+  }
+  async locate(recordId: string): Promise<OrganizePaper> {
+    const matches = this.app.vault.getMarkdownFiles().filter(f => this.app.metadataCache.getFileCache(f)?.frontmatter?.['zpi-organization'] === recordId);
+    if (matches.length !== 1) throw new Error(matches.length ? '同じ整理IDのノートが複数あります。同期による重複を確認してください。' : '整理後に論文が変更・削除されたか、さらに分類先を変更済みです。一覧を更新してください。');
+    const file = matches[0]; if (!file.parent) throw new Error('論文フォルダがありません。');
+    return { folder: file.parent.path, notePath: file.path, title: String(this.app.metadataCache.getFileCache(file)?.frontmatter?.title || file.basename), created: file.stat.ctime };
   }
   async categories(paths: OrganizePaths): Promise<Category[]> {
     const root = this.app.vault.getAbstractFileByPath(paths.root);
@@ -66,6 +86,7 @@ export class OrganizationStore implements OrganizationIO {
       if (depth > 4) return;
       for (const folder of parent.children) {
         if (!(folder instanceof TFolder) || folder.path === paths.inbox || folder.path.startsWith(paths.inbox + '/') || folder.name.startsWith('.') || this.note(folder)) continue;
+        if (folder.children.some(f => f instanceof TFile && f.extension === 'md' && f.name !== '分類.md' && (this.app.metadataCache.getFileCache(f)?.frontmatter?.citekey || this.app.metadataCache.getFileCache(f)?.frontmatter?.['pdf-status']))) continue;
         if (result.length >= 200) throw new Error('分類先が多すぎます。設定で分類先の親フォルダを絞り込んでください。');
         const guide = folder.children.find((f): f is TFile => f instanceof TFile && f.name === '分類.md');
         if (!paths.inbox.startsWith(folder.path + '/')) result.push({ path: folder.path.slice(paths.root.length + 1), description: guide ? (await this.app.vault.cachedRead(guide)).slice(0, 10000) : '' });
@@ -125,11 +146,11 @@ export class OrganizationStore implements OrganizationIO {
   }
   async mark(paper: PaperSnapshot, record: OrganizationRecord): Promise<void> {
     if ((await this.readPaper(paper)).fingerprint !== paper.fingerprint) throw new Error('移動直前に論文の内容が変わりました。再試行してください。');
-    await this.change(paper, fm => { fm.routing = 'classified'; fm['zpi-organization'] = record.id; });
+    await this.change(paper, fm => { fm.routing = record.manual ? 'manual' : 'classified'; fm['zpi-organization'] = record.id; });
   }
   async restoreMetadata(paper: PaperSnapshot, record: OrganizationRecord): Promise<void> {
     await this.change(paper, fm => {
-      if (fm['zpi-organization'] !== record.id || fm.routing !== 'classified') throw new Error('分類情報が変更されているため、自動では戻せません。');
+      if (fm['zpi-organization'] !== record.id || fm.routing !== (record.manual ? 'manual' : 'classified')) throw new Error('分類情報が変更されているため、処理前の状態に戻せません。');
       if (record.previousRouting === undefined) delete fm.routing; else fm.routing = record.previousRouting;
       if (record.previousMarker === undefined) delete fm['zpi-organization']; else fm['zpi-organization'] = record.previousMarker;
     });

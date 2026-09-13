@@ -1,8 +1,9 @@
-import { App, Modal, Setting, FuzzySuggestModal, TFolder } from 'obsidian';
+import { App, Modal, Setting, FuzzySuggestModal, TFolder, TFile } from 'obsidian';
 import { authorsOf, yearOf, type ZoteroItem, type Paper, identity } from './core';
 import { ZoteroClient } from './zotero';
 import { JOB_LABELS, type SerialQueue, type QueueJob } from './queue';
 import { unimportedPage, type ImportedPapers } from './imported';
+import { remedy } from './problems';
 
 type QueueView = Pick<SerialQueue<unknown>, 'jobs' | 'subscribe' | 'latest'>;
 export function modeTabs(el: HTMLElement, selected: 'import' | 'organize', change: (mode: 'import' | 'organize') => void): void {
@@ -34,6 +35,7 @@ export class PaperPicker extends Modal {
   private hiddenCount = 0;
   private hasMore = false;
   private ready = false;
+  private exclusions!: HTMLDetailsElement;
   constructor(app: App, private client: ZoteroClient, private queue: QueueView, private done: (paper: Paper) => void, private openQueue: () => void, private imported: () => Promise<ImportedPapers>, private organize: () => void, private setup: () => void) { super(app); }
   async onOpen(): Promise<void> {
     this.closed = false;
@@ -59,6 +61,7 @@ export class PaperPicker extends Modal {
     this.updateQueue();
     this.status = this.contentEl.createEl('p', { cls: 'zpi-status' });
     this.results = this.contentEl.createDiv({ cls: 'zpi-results' });
+    this.exclusions = this.contentEl.createEl('details', { cls: 'zpi-exclusions' });
     this.status.setText('Zoteroに接続中…'); this.controller = new AbortController();
     try {
       await this.client.probe(this.controller.signal);
@@ -89,6 +92,12 @@ export class PaperPicker extends Modal {
       if (generation !== this.generation || signal.aborted) return;
       const items = page.items;
       this.hiddenCount = page.hidden; this.hasMore = page.hasMore;
+      this.exclusions.empty(); this.exclusions.createEl('summary', { text: `取り込み済みで非表示の論文と理由（${page.hidden}件）` });
+      for (const item of page.hiddenItems) {
+        const match = index.match({ item, library: this.library, serverId: this.client.serverId });
+        const card = this.exclusions.createDiv({ cls: 'zpi-job' }); card.createEl('strong', { text: item.data.title || item.key }); card.createEl('p', { text: match?.reason || '取り込み済み', cls: 'zpi-meta' });
+        if (match?.path) new Setting(card).setDesc(match.path).addButton(b => b.setButtonText('既存ノートを開く').onClick(() => { const file = this.app.vault.getAbstractFileByPath(match.path!); if (file instanceof TFile) { this.close(); void this.app.workspace.getLeaf(false).openFile(file); } }));
+      }
       const rows: { paper: Paper; state: HTMLElement }[] = [];
       for (const item of items) {
         const paper: Paper = { item, library: this.library, serverId: this.client.serverId };
@@ -122,6 +131,10 @@ export class PaperPicker extends Modal {
     for (const [key, row] of this.rowStates) {
       const job = this.queue.latest(key);
       if (job?.state === 'completed' && job.path && this.app.vault.getAbstractFileByPath(job.path)) {
+        const card = this.exclusions.createDiv({ cls: 'zpi-job' });
+        card.createEl('strong', { text: row.button.querySelector('strong')?.textContent || job.title });
+        card.createEl('p', { text: 'この待ち行列で取り込みを完了しました。', cls: 'zpi-meta' });
+        new Setting(card).setDesc(job.path).addButton(b => b.setButtonText('既存ノートを開く').onClick(() => { const file = this.app.vault.getAbstractFileByPath(job.path!); if (file instanceof TFile) { this.close(); void this.app.workspace.getLeaf(false).openFile(file); } }));
         row.button.remove(); this.rowStates.delete(key); this.hiddenCount++; continue;
       }
       row.state.setText(job ? `${JOB_LABELS[job.state]}${job.state === 'running' ? '：' + job.progress : ''}` : 'クリックして取り込む');
@@ -129,6 +142,7 @@ export class PaperPicker extends Modal {
       row.button.disabled = !!job && ['queued', 'running', 'needs-input'].includes(job.state);
     }
     if (this.status && this.results) this.status.setText(`未取り込み：${this.rowStates.size}件${this.hasMore ? '（続きは検索で絞り込めます）' : ''}。取り込み済み${this.hiddenCount}件は非表示です。`);
+    this.exclusions?.querySelector('summary')?.setText(`取り込み済みで非表示の論文と理由（${this.hiddenCount}件）`);
   }
   onClose(): void { this.closed = true; this.controller?.abort(); clearTimeout(this.timer); this.unsubscribe?.(); this.contentEl.empty(); }
 }
@@ -143,7 +157,7 @@ export class QueueModal<T> extends Modal {
   private render(): void {
     const scroll = this.contentEl.scrollTop; this.contentEl.empty();
     this.contentEl.createEl('p', { text: '選んだ順番に処理します。この画面を閉じても処理は続きます。' });
-    if (this.history) new Setting(this.contentEl).addButton(b => b.setButtonText('整理結果・元に戻す').onClick(() => { this.close(); this.history!(); }));
+    if (this.history) new Setting(this.contentEl).addButton(b => b.setButtonText('整理結果・分類先を変更').onClick(() => { this.close(); this.history!(); }));
     if (!this.queue.jobs.length) this.contentEl.createEl('p', { text: '待ち行列は空です。取り込みコマンドから論文を選んでください。' });
     for (const job of this.queue.jobs) {
       const card = this.contentEl.createDiv({ cls: 'zpi-job' });
@@ -151,12 +165,13 @@ export class QueueModal<T> extends Modal {
       card.createEl('p', { text: `${JOB_LABELS[job.state]}：${job.progress}`, cls: 'zpi-import-state' }).dataset.state = job.state;
       if (job.path) card.createEl('p', { text: job.path, cls: 'zpi-meta' });
       if (job.error) card.createEl('p', { text: job.error, cls: 'zpi-job-error' });
+      if (job.error) card.createEl('p', { text: remedy(job.error), cls: 'zpi-meta' });
       const request = job.input as { kind?: string; reason?: string } | undefined;
       if (request?.reason) card.createEl('p', { text: request.reason, cls: 'zpi-meta' });
       const actions = new Setting(card);
       if (job.state === 'completed' && job.path) actions.addButton(b => b.setButtonText('ノートを開く').onClick(() => { this.close(); this.openFile(job.path!); }));
       if (job.state === 'needs-input') actions.addButton(b => b.setButtonText(request?.kind === 'select-pdf' ? 'PDFを選択' : 'ノートだけ保存').setCta().onClick(() => this.resolve(job)));
-      if (['failed', 'cancelled', 'needs-input'].includes(job.state)) actions.addButton(b => b.setButtonText('再試行').onClick(() => this.queue.retry(job.id)));
+      if ((job.payload as {kind?:string})?.kind !== 'undo' && ['failed', 'cancelled', 'needs-input'].includes(job.state)) actions.addButton(b => b.setButtonText('再試行').onClick(() => this.queue.retry(job.id)));
       if (['queued', 'running', 'needs-input'].includes(job.state) && !job.committing) actions.addButton(b => b.setButtonText('キャンセル').onClick(() => this.queue.cancel(job.id)));
     }
     new Setting(this.contentEl).addButton(b => b.setButtonText('完了・キャンセル済みを一覧から消す').onClick(() => this.queue.clearFinished()));

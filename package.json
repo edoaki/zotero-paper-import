@@ -1,8 +1,8 @@
 {
   "name": "zotero-paper-import",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
-  "description": "Zoteroの論文をノートとPDFで取り込み、未整理の論文をAIで分類します。バックグラウンド処理と整理結果の取り消しに対応。",
+  "description": "Zoteroの論文をノートとPDFで取り込み、未整理をAIで分類。分類先の変更、既存ノートのZoteroキー補完に対応します。",
   "scripts": {
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit",

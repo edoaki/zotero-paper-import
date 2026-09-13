@@ -67,3 +67,5 @@
 .zpi-mode-tabs { display: flex; gap: 8px; margin: 0 0 16px; flex-shrink: 0; }
 .zpi-mode-tabs button { flex: 1; }
 .zpi-mode-tabs button[aria-selected="true"] { background: var(--interactive-accent); color: var(--text-on-accent); }
+.zpi-exclusions { margin-top: 12px; min-height: 24px; overflow-y: auto; flex-shrink: 1; max-height: 35vh; overflow-wrap: anywhere; }
+.zpi-exclusions summary { cursor: pointer; padding: 6px 0; }

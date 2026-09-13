@@ -1,7 +1,13 @@
 import { App, TFile, TFolder, parseYaml, stringifyYaml, normalizePath } from 'obsidian';
 import type { Storage, StoredNote } from './importer';
 import { readRecord, replaceGenerated, type RecordData } from './core';
-import { ImportedPapers, inFolder } from './imported';
+import { ImportedPapers, inFolder, paperIdentifiers } from './imported';
+import { ZoteroClient } from './zotero';
+import { uniqueKeyMatch } from './key-completion';
+import type { JobProgress } from './queue';
+import type { ZoteroItem } from './core';
+
+export interface KeylessNote { path: string; title: string; identifiers: string[]; issue?: string }
 
 export function frontmatter(text: string): { values: Record<string, unknown>; end: number } {
   const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
@@ -12,6 +18,53 @@ export function frontmatter(text: string): { values: Record<string, unknown>; en
 }
 export class VaultStorage implements Storage {
   constructor(private app: App, private pluginId: string) {}
+  async keylessNotes(roots: string[]): Promise<KeylessNote[]> {
+    const result: KeylessNote[] = [];
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (!roots.some(root => inFolder(file.path, root))) continue;
+      const text = await this.app.vault.cachedRead(file);
+      let fm: Record<string, unknown>; try { fm = frontmatter(text).values; } catch { continue; }
+      if (fm['zotero-key']) continue;
+      const identifiers = paperIdentifiers(fm);
+      if (!identifiers.length && !fm.citekey && !fm['pdf-status'] && !fm.zpi) continue;
+      const missing = typeof fm.arxiv === 'number' ? 'arxivのプロパティの種類を「テキスト」に変更し、正しいarXiv IDを設定してください。' : 'DOI・arXiv IDがありません。ノートのプロパティに確認済みの識別子を記入してください。';
+      result.push({ path: file.path, title: String(fm.title || file.basename), identifiers, issue: fm.zpi ? 'プラグインの管理情報があるため、既存情報を確認してください。' : !identifiers.length ? missing : undefined });
+    }
+    return result;
+  }
+  async completeKey(path: string, library: string, client: ZoteroClient, progress: JobProgress): Promise<string> {
+    if (!/^(users\/0|groups\/\d+)$/.test(library)) throw new Error('Zoteroのライブラリを選び直してください。');
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) throw new Error('対象ノートが移動・削除されました。一覧を更新してください。');
+    const original = await this.app.vault.read(file), metadata = frontmatter(original).values;
+    const declared = metadata['zotero-library'];
+    if (declared && ![library, ...(library === 'users/0' ? ['My Library','マイライブラリ','library'] : [])].includes(String(declared))) throw new Error('ノートのライブラリ指定と選択したライブラリが異なります。選び直してください。');
+    const identifiers = paperIdentifiers(metadata);
+    if (metadata['zotero-key'] || metadata.zpi || !identifiers.length) uniqueKeyMatch(metadata, []);
+    progress.update('ZoteroのDOI・arXiv IDと照合中…');
+    await client.probe(progress.controller.signal);
+    const items: ZoteroItem[] = []; let start = 0;
+    while (true) {
+      const page = await client.searchPage('', library, start, progress.controller.signal); items.push(...page.items);
+      if (!page.hasMore) break; start += 100;
+    }
+    const matched = uniqueKeyMatch(metadata, items);
+    const fresh = await client.paper(matched.key, library, progress.controller.signal);
+    uniqueKeyMatch(metadata, [fresh.item]);
+    progress.controller.signal.throwIfAborted();
+    const current = await this.app.vault.read(file), fm = frontmatter(current).values;
+    if (file.path !== path || JSON.stringify(paperIdentifiers(fm).sort()) !== JSON.stringify(identifiers.sort()) || fm['zotero-key'] || fm.zpi || fm['zotero-library'] !== declared) throw new Error('照合中に識別情報が変更されました。一覧を更新して再試行してください。');
+    progress.commit(); progress.update('Zoteroキーを補完中…');
+    await this.app.vault.process(file, text => {
+      if (text !== current) throw new Error('保存直前にノートが編集されました。再試行してください。');
+      const parsed = frontmatter(text);
+      parsed.values['zotero-key'] = matched.key; parsed.values['zotero-library'] = library;
+      parsed.values['zotero-status'] = 'registered';
+      parsed.values['zotero-link'] = `zotero://select/${library === 'users/0' ? 'library' : library}/items/${matched.key}`;
+      return '---\n' + stringifyYaml(parsed.values) + '---\n' + text.slice(parsed.end);
+    });
+    return path;
+  }
   async importedPapers(folder: string | string[]): Promise<ImportedPapers> {
     const index = new ImportedPapers();
     const roots = Array.isArray(folder) ? folder : [folder];
@@ -21,7 +74,7 @@ export class VaultStorage implements Storage {
       if (!roots.some(root => inFolder(file.path, root)) && !cached?.zpi) continue;
       if (cached && !cached.zpi && !cached['zotero-key'] && !['DOI','doi','arxiv','arxiv-id','arxivId','url','URL'].some(key => cached[key])) continue;
       const text = await this.app.vault.cachedRead(file);
-      try { index.add(frontmatter(text).values, text); } catch { /* unrelated or broken note */ }
+      try { index.add(frontmatter(text).values, text, file.path); } catch { /* unrelated or broken note */ }
     }
     return index;
   }

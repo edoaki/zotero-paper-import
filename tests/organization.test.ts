@@ -26,10 +26,10 @@ class Memory implements OrganizationIO {
   }
   async mark(p: PaperSnapshot, r: OrganizationRecord) {
     const current = await this.readPaper(p); if (current.fingerprint !== p.fingerprint) throw Error('edited');
-    const stored = this.papers.get(p.folder)!; stored.routing = 'classified'; stored.marker = r.id;
+    const stored = this.papers.get(p.folder)!; stored.routing = r.manual ? 'manual' : 'classified'; stored.marker = r.id;
   }
   async restoreMetadata(p: PaperSnapshot, r: OrganizationRecord) {
-    const stored = this.papers.get(p.folder)!; if (stored.marker !== r.id || stored.routing !== 'classified') throw Error('changed marker');
+    const stored = this.papers.get(p.folder)!; if (stored.marker !== r.id || stored.routing !== (r.manual ? 'manual' : 'classified')) throw Error('changed marker');
     stored.routing = r.previousRouting; stored.marker = r.previousMarker;
   }
   async move(from: string, to: string) {
@@ -39,39 +39,40 @@ class Memory implements OrganizationIO {
   }
   async persist(records: OrganizationRecord[]) { if (this.failSave) throw Error('save failed'); this.saved = structuredClone(records); this.writes++; }
 }
-test('move and undo preserve memo edits, restore routing and keep a durable history', async () => {
+test('manual category changes preserve current memo edits and create a new result', async () => {
   const io = new Memory(), organizer = new Organizer(io, []);
   assert.equal(await organizer.organize('one', paper, paths, async()=>existing, progress()), 'Research/Learning/Example/Example.md');
   const moved = io.papers.get('Research/Learning/Example')!; moved.text += '\nNew personal writing';
   assert.equal(io.saved[0].state, 'done');
-  await organizer.undo('one', progress());
-  assert.match(io.papers.get(paper.folder)!.text, /New personal writing/);
-  assert.equal(io.papers.get(paper.folder)!.routing, 'pending'); assert.equal(io.papers.get(paper.folder)!.marker, undefined);
-  assert.equal(io.saved[0].state, 'undone'); assert.equal(io.moves, 2);
+  io.folders.add('Research/Other');
+  await organizer.changeCategory('two','one',moved,paths,'Other',progress());
+  assert.match(io.papers.get('Research/Other/Example')!.text, /New personal writing/);
+  assert.equal(io.papers.get('Research/Other/Example')!.routing, 'manual'); assert.equal(io.papers.get('Research/Other/Example')!.marker, 'two');
+  assert.equal(io.saved[0].state, 'superseded'); assert.equal(io.saved[1].state, 'done'); assert.equal(io.moves, 2);
 });
-test('new category gets criteria and is removed on undo only while unused and unchanged', async () => {
+test('manual changes leave the former category and its criteria intact', async () => {
   for (const edited of [false, true]) {
     const io = new Memory(), organizer = new Organizer(io, []);
     await organizer.organize('one', paper, paths, async()=>newCategory, progress());
     assert.equal(io.guides.get('Research/New Topic'), newCategory.description);
     if (edited) io.guides.set('Research/New Topic', 'User-edited criteria');
-    await organizer.undo('one', progress());
-    assert.equal(io.folders.has('Research/New Topic'), edited);
+    await organizer.changeCategory('two','one',io.papers.get('Research/New Topic/Example')!,paths,'Learning',progress());
+    assert.equal(io.folders.has('Research/New Topic'), true);
   }
 });
-test('undo does not remove a new category now used by another paper', async () => {
+test('manual changes keep other papers in the former category', async () => {
   const io = new Memory(), organizer = new Organizer(io, []);
   await organizer.organize('one', paper, paths, async()=>newCategory, progress());
   io.papers.set('Research/New Topic/Other', {...paper, folder:'Research/New Topic/Other', text:'Other', fingerprint:''});
-  await organizer.undo('one', progress()); assert.equal(io.folders.has('Research/New Topic'), true);
+  await organizer.changeCategory('two','one',io.papers.get('Research/New Topic/Example')!,paths,'Learning',progress()); assert.equal(io.folders.has('Research/New Topic'), true);
 });
-test('destination collisions and occupied undo destinations stop without overwriting', async () => {
+test('destination collisions stop both automatic and manual moves without overwriting', async () => {
   const io = new Memory(), organizer = new Organizer(io, []);
   io.folders.add('Research/Learning/Example');
   await assert.rejects(organizer.organize('one',paper,paths,async()=>existing,progress()), /同名/);
   assert.equal(io.moves,0); io.folders.delete('Research/Learning/Example');
-  await organizer.organize('one',paper,paths,async()=>existing,progress()); io.folders.add(paper.folder);
-  await assert.rejects(organizer.undo('one',progress()),/同名/); assert.equal(io.moves,1);
+  await organizer.organize('one',paper,paths,async()=>existing,progress()); io.folders.add('Research/Other');io.folders.add('Research/Other/Example');
+  await assert.rejects(organizer.changeCategory('two','one',io.papers.get('Research/Learning/Example')!,paths,'Other',progress()),/同名/); assert.equal(io.moves,1);
 });
 test('cancelled or edited papers stay in the inbox; manual placement and out-of-scope folders are protected', async () => {
   const io = new Memory(), organizer = new Organizer(io, []), p = progress();
@@ -96,18 +97,18 @@ test('saving intent must succeed before changes; inability to classify leaves a 
   io.failSave=false;await organizer.organize('one',paper,paths,async()=>({...existing,category:null,reason:'本文が不足'}),progress());
   assert.equal(io.moves,0);assert.equal(io.saved[0].state,'unchanged');assert.equal(io.saved[0].reason,'本文が不足');
 });
-test('restart recovers a moved paper and an interrupted undo using identity markers', async () => {
+test('restart only inspects current placement and never replays old undo metadata or file changes', async () => {
   const io=new Memory(),organizer=new Organizer(io,[]);
   await organizer.organize('one',paper,paths,async()=>existing,progress());
   const journal=structuredClone(io.saved);journal[0].state='prepared';
   const recovered=new Organizer(io,journal);await recovered.recover();assert.equal(recovered.records[0].state,'done');
   recovered.records[0].state='restoring';await io.move(recovered.records[0].to,recovered.records[0].from);
-  await recovered.recover();assert.equal(recovered.records[0].state,'undone');assert.equal(io.papers.get(paper.folder)!.routing,'pending');
+  const moves=io.moves;await recovered.recover();assert.equal(recovered.records[0].state,'undone');assert.equal(io.papers.get(paper.folder)!.routing,'classified');assert.equal(io.moves,moves);
 });
-test('undo rejects a different paper substituted at the same path',async()=>{
+test('manual category change rejects a different paper substituted at the same path',async()=>{
   const io=new Memory(),organizer=new Organizer(io,[]);await organizer.organize('one',paper,paths,async()=>existing,progress());
   io.papers.get('Research/Learning/Example')!.marker='different-operation';
-  await assert.rejects(organizer.undo('one',progress()),/識別情報/);assert.equal(io.moves,1);
+  await assert.rejects(organizer.changeCategory('two','one',io.papers.get('Research/Learning/Example')!,paths,'Other',progress()),/一致/);assert.equal(io.moves,1);
 });
 test('classification accepts known categories, rejects unsafe new paths, and handles uncertainty',()=>{
   const categories=[{path:'Learning',description:'Criteria'}];

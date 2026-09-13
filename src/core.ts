@@ -6,6 +6,7 @@ export interface Settings {
   model: string; timeoutSeconds: number;
   rules: Rule[]; activeRule: string; template: string; port: number;
   organizeInbox: string; organizeRoot: string; organizeRule: string;
+  layoutVersion: number; inboxName: string; legacyFolders: string[];
 }
 export const DEFAULT_TEMPLATE = `# {{title}}
 
@@ -27,6 +28,7 @@ export const DEFAULT_SETTINGS: Settings = {
   timeoutSeconds: 180, rules: [], activeRule: '',
   template: DEFAULT_TEMPLATE, port: 23119,
   organizeInbox: '', organizeRoot: '', organizeRule: '',
+  layoutVersion: 0, inboxName: '未整理', legacyFolders: [],
 };
 export function migrateAISettings(settings: Settings): Settings {
   if ((settings as { provider: string }).provider !== 'gemini') return settings;
