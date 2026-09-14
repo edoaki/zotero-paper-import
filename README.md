@@ -17,6 +17,28 @@ Obsidian **1.13.4以上**・Zotero **10以上**が必要です。Macで動作確
 
 既に入れている人は [更新手順](docs/INSTALL.md#更新) を使ってください。
 
+## Zoteroの準備（初めて使う人向け）
+
+### 1. Zoteroアプリを入れる
+
+[Zotero公式のダウンロードページ](https://www.zotero.org/download/) から、パソコン用のZoteroをインストールして起動します。
+
+### 2. ChromeにZotero Connectorを入れる
+
+1. Chromeを開き、右上の **⋮（縦に3つの点）→ 拡張機能 → Chrome ウェブストアにアクセス** を押します。[Chrome ウェブストア](https://chromewebstore.google.com/) を直接開いても大丈夫です。
+2. **Zotero Connector** を検索し、**Chromeに追加 → 拡張機能を追加** を押します。
+3. Chrome右上の **拡張機能（パズルのピースのアイコン）** を押し、Zotero Connectorの横の **ピン** を押します。ピン留めしておくと、いつでもすぐに使えて便利です。
+
+### 3. 論文ページからZoteroに登録する
+
+1. Zoteroアプリを起動したまま、Chromeで **arXivなどの論文ページ** を開きます。タイトルや要旨が載っているページで大丈夫です。
+2. 右上にピン留めした **Zotero Connectorのアイコン** を押すと、その論文がZoteroに登録されます。アイコンはページに応じて、紙や本などの形に変わります。
+3. Zoteroアプリで論文が追加されたことを確認します。取得できるPDFがあれば、一緒に保存されます。
+
+あとは下の「最初の設定」を済ませ、Obsidianで取り込む論文を選べばOKです。
+
+参考：[Zotero公式ガイド](https://www.zotero.org/support/quick_start_guide#capturing_items) · [Chrome拡張機能の公式ヘルプ](https://support.google.com/chrome_webstore/answer/2664769?hl=ja)
+
 ## 最初の設定
 
 1. Zoteroを起動し、**設定 → 詳細** で他のアプリケーションとの通信を許可します。
