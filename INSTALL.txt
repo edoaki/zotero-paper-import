@@ -1,4 +1,8 @@
-Zotero Paper Import 0.3.0 日本語版
+Zotero Paper Import 0.3.4 日本語版
+
+SafariなどがZIPを自動展開して、このフォルダになっている場合は正常です。
+main.js・manifest.json・styles.cssがあれば、そのまま以下の手順で入れられます。
+ZIPに戻す必要はありません。
 
 【このフォルダの入れ方】
 

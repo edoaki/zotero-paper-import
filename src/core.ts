@@ -3,7 +3,7 @@ export type Provider = 'codex' | 'claude' | 'opencode' | 'antigravity';
 export interface Rule { id: string; name: string; prompt: string }
 export interface Settings {
   folder: string; naming: NamingMode; provider: Provider; cliPath: string;
-  model: string; timeoutSeconds: number;
+  model: string; timeoutSeconds: number; translateAbstract?: boolean;
   rules: Rule[]; activeRule: string; template: string; port: number;
   organizeInbox: string; organizeRoot: string; organizeRule: string;
   layoutVersion: number; inboxName: string; legacyFolders: string[];
@@ -25,7 +25,7 @@ export const DEFAULT_TEMPLATE = `# {{title}}
 `;
 export const DEFAULT_SETTINGS: Settings = {
   folder: '', naming: 'author-year', provider: 'codex', cliPath: '', model: '',
-  timeoutSeconds: 180, rules: [], activeRule: '',
+  translateAbstract: true, timeoutSeconds: 180, rules: [], activeRule: '',
   template: DEFAULT_TEMPLATE, port: 23119,
   organizeInbox: '', organizeRoot: '', organizeRule: '',
   layoutVersion: 0, inboxName: '未整理', legacyFolders: [],
@@ -42,11 +42,13 @@ export interface ZoteroItem {
     abstractNote?: string; DOI?: string; url?: string; contentType?: string;
     filename?: string; parentItem?: string; [key: string]: unknown };
 }
-export interface Paper { item: ZoteroItem; library: string; serverId: string }
+export interface AbstractTranslation { source: string; text: string }
+export interface Paper { item: ZoteroItem; library: string; serverId: string; abstractTranslation?: AbstractTranslation }
 export interface NameResult { name: string; reason: string; mode: NamingMode; provider?: Provider }
 export interface AttachmentRecord { key: string; filename: string; sha256: string }
 export interface RecordData {
   schema: 1; library: string; key: string; serverId: string;
+  abstractTranslation?: AbstractTranslation;
   attachments: AttachmentRecord[]; naming: NameResult; updated: string; pdfStatus: string;
 }
 export const START = '<!-- zpi:generated:start -->';
@@ -97,15 +99,19 @@ export function renderGenerated(paper: Paper, record: RecordData, template: stri
   if (doi) links.push(`[DOI](${doi})`);
   if (source) links.push(`[原文](${source})`);
   const pdfLinks = record.attachments.map(a => `[${a.filename}](./${encodeURIComponent(a.filename)})`).join('\n');
+  const originalAbstract = plain(item.data.abstractNote || '').trim();
+  const translated = record.abstractTranslation?.source === originalAbstract ? record.abstractTranslation.text : '';
+  const abstract = translated ? (translated === originalAbstract ? plain(translated) : `${plain(translated)}\n\n### 原文\n${originalAbstract}`) : (originalAbstract || '未取得');
   const values: Record<string, string> = {
     title: plain(item.data.title || 'タイトル未設定').replace(/[\r\n]+/g, ' '), authors: authorsOf(item), year: yearOf(item),
-    abstract: plain(item.data.abstractNote || '未取得'), source_links: links.join(' · '),
+    abstract, source_links: links.join(' · '),
     pdf_links: pdfLinks || 'PDF未取得', naming_reason: record.naming.reason,
   };
   let body = template.replace(/\{\{([a-z_]+)\}\}/g, (match, key: string) => values[key] ?? match).trim();
   // User templates may omit these fields, but the paper must remain identifiable and readable offline.
   if (!template.includes('{{source_links}}')) body += '\n\n' + values.source_links;
   if (!template.includes('{{pdf_links}}')) body += '\n\n' + values.pdf_links;
+  if (translated && !template.includes('{{abstract}}')) body += '\n\n## 要旨\n' + values.abstract;
   return START + '\n' + body.replaceAll(START, '').replaceAll(END, '') + '\n' + END;
 }
 export function generatedBounds(text: string): [number, number] {

@@ -1,7 +1,7 @@
 import { App, PluginSettingTab, Setting, Notice } from 'obsidian';
 import type ZoteroPaperImport from './main';
 import { DEFAULT_TEMPLATE, METHOD_RULE, parseAI, type NamingMode, type Provider, type Rule } from './core';
-import { FolderPicker } from './ui';
+import { VaultStorage } from './storage';
 import { invokeAI } from './ai';
 import { defaultModels, discoverModels } from './models';
 import { CLISetup } from './cli-setup';
@@ -26,16 +26,32 @@ export class ImportSettingsTab extends PluginSettingTab {
     el.empty(); el.addClass('zpi-settings');
     new Setting(el).setName('Zotero Paper Import').setHeading();
     el.createEl('p', { text: '1コマンドで、論文ノートとPDFをセットで保存します。' });
+    p.updater.render(el);
     this.connection(el);
     const layout = el.createEl('p', { cls: 'zpi-status' });
     const describe = () => { try { const paths = paperPaths(s); layout.setText(`取り込み先・整理対象：${paths.inbox}\n分類先：${paths.root} 内の各分類フォルダ`); } catch { layout.setText('文献の親フォルダを指定してください。'); } };
-    new Setting(el).setName('文献の親フォルダ').setDesc('ここを1つ選ぶと、取り込み先と整理対象が決まります。既存の論文は自動では移動しません。').addText(t => t.setPlaceholder('例：文献').setValue(s.folder).onChange(async v => { s.folder = v; describe(); await p.saveSettings(); })).addButton(b => b.setButtonText('選択').onClick(() => new FolderPicker(this.app, path => { s.folder = path; void p.saveSettings(); this.display(); }).open()));
+    let folderDraft = s.folder;
+    new Setting(el).setName('取り込み用フォルダー').setDesc('新しい名前を入力してください。例：研究/文献（親フォルダーも作成します）')
+      .addText(t => t.setPlaceholder('研究/文献').setValue(folderDraft).onChange(v => { folderDraft = v; }))
+      .addButton(b => b.setButtonText('作成して設定').setCta().onClick(async () => {
+        b.setDisabled(true);
+        try {
+          const paths = paperPaths({ ...s, folder: folderDraft, layoutVersion: 1 });
+          await new VaultStorage(this.app, p.manifest.id).mkdir(paths.inbox);
+          const previous = s.folder;
+          s.folder = paths.root;
+          if (previous && previous !== paths.root) s.legacyFolders = [...new Set([...s.legacyFolders, previous])];
+          await p.saveSettings(); this.display(); new Notice(`取り込み先：${paths.inbox}`);
+        } catch (e) { new Notice((e as Error).message); }
+        finally { b.setDisabled(false); }
+      }));
     describe();
     const former = s.legacyFolders.filter(path => path !== s.folder && !path.startsWith(s.folder + '/'));
     if (former.length) el.createEl('p', { cls: 'zpi-status', text: `旧設定の場所：${former.join('、')}。取り込み済み照合とキー補完の対象です。整理したい論文は新しい未整理フォルダへ移動してください。` });
     const advanced = el.createEl('details'); advanced.createEl('summary', { text: '未整理フォルダの名前を変える' });
     new Setting(advanced).setName('親フォルダ内での名前').addText(t => t.setValue(s.inboxName).setPlaceholder('未整理').onChange(async v => { s.inboxName = v; describe(); await p.saveSettings(); }));
     new Setting(el).setName('既存ノートのZoteroキー').setDesc('DOI・arXiv IDでZoteroと照合し、キーがないノートを補完します。').addButton(b => b.setButtonText('キーを補完').onClick(() => p.openKeyCompletion()));
+    new Setting(el).setName('要旨を日本語に翻訳').setDesc('選択したAIで翻訳し、原文もノートに残します。取り込み・情報更新時にAIの利用枠を消費します。').addToggle(t => t.setValue(s.translateAbstract !== false).onChange(async value => { s.translateAbstract = value; await p.saveSettings(); }));
     new Setting(el).setName('命名方式').addDropdown(d => d.addOption('author-year', '著者名＋年（AI不要）').addOption('method', '手法名（AI）').addOption('custom', '自分のルール（AI）').setValue(s.naming).onChange(async v => { s.naming = v as NamingMode; await p.saveSettings(); this.display(); }));
     new Setting(el).setName('整理の設定').setHeading();
     el.createEl('p', { text: '未整理フォルダ直下の論文フォルダを整理します。分類先の説明は各フォルダの「分類.md」から読み、必要なら新しい分類フォルダと説明を作ります。' });
@@ -43,9 +59,9 @@ export class ImportSettingsTab extends PluginSettingTab {
     const ruleEditor = new Setting(criteria); ruleEditor.settingEl.addClass('zpi-template-editor');
     ruleEditor.addTextArea(t => { t.inputEl.rows = 5; t.inputEl.addClass('zpi-template'); t.setValue(s.organizeRule || ORGANIZE_RULE).onChange(async v => { s.organizeRule = v; await p.saveSettings(); }); });
     {
-      new Setting(el).setName('AIの設定（命名・整理）').setHeading();
-      el.createEl('p', { cls: 'zpi-disclosure', text: 'AIによる命名・整理にはCLIのインストールとログインが必要です。論文ノート・PDFの抽出本文・分類先の説明を選択したAIへ送信します。利用料金・制限はそのサービスに従います。' });
-      new Setting(el).setName('使用するAI').addDropdown(d => d.addOption('codex', 'Codex').addOption('claude', 'Claude Code').addOption('opencode', 'OpenCode（実験的対応）').addOption('antigravity', 'Antigravity CLI（実験的対応）').setValue(s.provider).onChange(async v => { s.provider = v as Provider; s.cliPath = ''; s.model = ''; await p.saveSettings(); this.display(); }));
+      new Setting(el).setName('AIの設定（翻訳・命名・整理）').setHeading();
+      el.createEl('p', { cls: 'zpi-disclosure', text: 'AIによる翻訳・命名・整理にはCLIのインストールとログインが必要です。論文ノート・PDFの抽出本文・分類先の説明を選択したAIへ送信します。利用料金・制限はそのサービスに従います。' });
+      new Setting(el).setName('使用するAI').addDropdown(d => d.addOption('codex', 'Codex').addOption('claude', 'Claude Code').addOption('opencode', 'OpenCode（実験的対応）').addOption('antigravity', 'Antigravity CLI').setValue(s.provider).onChange(async v => { s.provider = v as Provider; s.cliPath = ''; s.model = ''; await p.saveSettings(); this.display(); }));
       const cliContainer = el.createDiv();
       const refreshModels = this.models(el);
       this.cliSetup = new CLISetup(cliContainer, s, () => p.saveSettings(), () => { void refreshModels(); });
@@ -96,7 +112,7 @@ export class ImportSettingsTab extends PluginSettingTab {
   }
   private models(el: HTMLElement): () => Promise<void> {
     const p = this.owner, s = p.settings;
-    const row = new Setting(el).setName('モデル').setDesc('CLIを検出するとモデル一覧を取得します。迷ったら「自動」のままで使えます。');
+    const row = new Setting(el).setName('モデル').setDesc('利用できるモデルから中程度のモデルを標準に選びます。');
     let select!: HTMLSelectElement;
     const populate = (models: { value: string; label: string }[]) => {
       select.replaceChildren();
@@ -113,12 +129,16 @@ export class ImportSettingsTab extends PluginSettingTab {
         const result = await discoverModels({ ...s }, controller.signal);
         if (controller.signal.aborted) return;
         populate(result);
-        row.setDesc(s.provider === 'claude' ? 'モデル名の入力は不要です。「自動」または種類を選んでください。利用できる種類はログイン先の契約によります。' : 'CLIから取得したモデル一覧です。迷ったら「自動」のままで使えます。');
+        row.setDesc(s.provider === 'claude' ? 'Sonnetを標準に使います。' : 'CLIの最新のモデル一覧です。（標準）は更新に合わせて選び直します。');
       } catch (e) {
-        if (!controller.signal.aborted) row.setDesc(s.provider === 'antigravity' ? 'モデル一覧を取得できません。ターミナルでagyを開いてログインし、「一覧を更新」を押してください。「自動」も利用できます。' : 'モデル一覧を取得できませんでした。「自動」を使うか、CLIを設定して「一覧を更新」を押してください。');
+        if (!controller.signal.aborted) {
+          populate([{ value: '', label: 'モデルを選択してください' }]);
+          row.setDesc('一覧を取得できませんでした。CLIの設定を確認して「一覧を更新」を押してください。');
+        }
       }
     };
     if (s.provider !== 'claude') row.addButton(b => b.setButtonText('一覧を更新').onClick(() => { void load(); }));
+    void load();
     return load;
   }
   private rules(el: HTMLElement): void {

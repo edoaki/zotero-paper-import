@@ -116,3 +116,16 @@ test('AI output requires evidence and a bounded valid shape', () => {
   assert.throws(() => parseAI('{"name":"MADEUP","reason":"maybe","evidence":""}'));
   assert.throws(() => parseAI('not json'));
 });
+
+test('translated abstracts and originals survive import and refresh without losing personal notes', async () => {
+  const store = new MemoryStore(), importer = new Importer(store);
+  const translated = { ...paper, item: { ...paper.item, data: { ...paper.item.data, abstractNote: 'Original abstract.' } }, abstractTranslation: { source: 'Original abstract.', text: '日本語の要旨。' } };
+  const result = await importer.import(translated, settings, naming, [pdf]);
+  let text = Buffer.from(await store.readBinary(result.path)).toString();
+  assert.match(text, /## 要旨\n日本語の要旨。\n\n### 原文\nOriginal abstract\./);
+  store.files.set(result.path, Buffer.from(text + '\nMy personal memo\n'));
+  await importer.update((await store.records())[0], translated, settings, [pdf]);
+  text = Buffer.from(await store.readBinary(result.path)).toString();
+  assert.match(text, /日本語の要旨。/); assert.match(text, /My personal memo/);
+  assert.deepEqual((await store.records())[0].record.abstractTranslation, translated.abstractTranslation);
+});

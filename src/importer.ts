@@ -41,6 +41,7 @@ export class Importer {
     if (await this.storage.exists(folder)) throw new Error('取り込み中に同名の保存先が作成されました。もう一度実行してください。');
     await this.storage.reserveFolder(folder);
     const record: RecordData = {
+      abstractTranslation: paper.abstractTranslation,
       schema: 1, library: paper.library, key: paper.item.key, serverId: paper.serverId,
       attachments: pdfs.map((p, i) => ({ key: p.key, filename: i === 0 ? '本文.pdf' : `添付-${p.key}.pdf`, sha256: sha256(p.bytes) })),
       naming: { ...name, name: folderName }, updated: new Date().toISOString(),
@@ -87,7 +88,7 @@ export class Importer {
         attachments.push({ key: p.key, filename, sha256: sha256(p.bytes) });
       }
     }
-    const record: RecordData = { ...note.record, attachments, naming: name || note.record.naming, updated: new Date().toISOString(), pdfStatus: attachments.length ? 'stored' : note.record.pdfStatus };
+    const record: RecordData = { ...note.record, abstractTranslation: paper.abstractTranslation, attachments, naming: name || note.record.naming, updated: new Date().toISOString(), pdfStatus: attachments.length ? 'stored' : note.record.pdfStatus };
     const generated = renderGenerated(paper, record, settings.template);
     await this.storage.backup(note, prior);
     const changed: { path: string; hash: string; previous?: Uint8Array }[] = [];

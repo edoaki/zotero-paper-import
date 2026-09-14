@@ -81,3 +81,11 @@ PDFの選択や未取得の確認は「確認待ち」にし、自動でダイ�
 AIの選択時に実行ファイルを検出し、見つからなければOS別の導入・ログイン手順を展開します。process.platformで初期のOSを決め、利用者が切り替えることもできます。コマンドは表示・コピーだけで自動実行しません。未導入の間は自動モデル取得を行わず、再検出後に取得します。
 
 公式の参照先：[Codex](https://learn.chatgpt.com/docs/codex/cli)、[Claude Code](https://code.claude.com/docs/en/setup)、[Antigravity CLI](https://antigravity.google/docs/cli/install/)、[OpenCode](https://opencode.ai/docs/)、[Scoop](https://github.com/ScoopInstaller/Install)。
+
+## PDF抽出の隔離（0.3.1）
+
+PDF本文はChromium標準の専用Web Workerで抽出する。PDF.js本体と対応するPDF.js Workerを同じビルドから単一のスクリプトへまとめ、プラグインに文字列として同梱する。Obsidianのレンダラー上ではPDF.jsを読み込まず、`pdfjsLib`・`pdfjsWorker`などのグローバル変数にも触れない。Obsidian内蔵PDF.jsのバージョン、内部API、初期化順序に依存しない。
+
+抽出ごとに独立したWorkerを作成し、PDFのコピーをメッセージで渡す。応答は専用のメッセージ種別で識別し、PDF.js内部のready通知と区別する。成功・失敗・キャンセル・120秒の時間切れでWorkerを終了し、Blob URLを解放する。元のPDFバッファは転送・変更しない。外部ランタイムや追加の配布ファイルは不要。
+
+ObsidianのElectronではNodeのworker_threadsを作成できなかったため、これを使わない。将来のChromium・PDF.js更新時には下記の回帰検証を繰り返す。今後のすべての更新への無条件の互換性を保証するものではない。

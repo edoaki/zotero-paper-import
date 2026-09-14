@@ -11,3 +11,9 @@ for (const file of ['LICENSE', 'THIRD-PARTY-LICENSES.txt', 'README.md', 'INSTALL
 await cp('docs', `${root}/docs`, { recursive: true });
 execFileSync('zip', ['-qr', `${manifest.id}-${manifest.version}.zip`, manifest.id], { cwd: 'release' });
 console.log(`release/${manifest.id}-${manifest.version}.zip`);
+
+// Upload these individual assets alongside the ZIP for the in-app updater.
+const assets = `release/github-assets-${manifest.version}`;
+await mkdir(assets, { recursive: true });
+for (const file of ['main.js', 'manifest.json', 'styles.css']) await copyFile(`dist/${file}`, `${assets}/${file}`);
+console.log(`GitHub update assets: ${assets}`);

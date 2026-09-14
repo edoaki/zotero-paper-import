@@ -32,3 +32,9 @@ test('key completion refuses ambiguous, missing or already keyed notes',()=>{
   assert.throws(()=>uniqueKeyMatch({title:'Same title'},[a]),/IDがありません/);
   assert.throws(()=>uniqueKeyMatch({'zotero-key':'EXISTING',arxiv:'2403.07028'},[a]),/上書き/);
 });
+
+test('manual destination supports nested folders and rejects paths outside the vault', () => {
+  const settings = { ...DEFAULT_SETTINGS, layoutVersion: 1, folder: '研究/テーマ/文献' };
+  assert.deepEqual(paperPaths(settings), { root: '研究/テーマ/文献', inbox: '研究/テーマ/文献/未整理' });
+  for (const folder of ['../文献', '/tmp/文献', '研究/../../文献', '研究/.obsidian']) assert.throws(() => paperPaths({ ...settings, folder }));
+});

@@ -1,6 +1,6 @@
 {
   "name": "zotero-paper-import",
-  "version": "0.3.0",
+  "version": "0.3.4",
   "private": true,
   "description": "Zoteroの論文をノートとPDFで取り込み、未整理をAIで分類。分類先の変更、既存ノートのZoteroキー補完に対応します。",
   "scripts": {

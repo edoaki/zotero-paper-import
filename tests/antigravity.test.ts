@@ -30,6 +30,8 @@ test('Antigravity invocation sends full input over stdin and creates an isolated
   await writeFile(executable, `#!${process.execPath}
 const fs=require('node:fs'),assert=require('node:assert/strict');
 const args=process.argv.slice(2);
+if(args[0]==='models'){console.log('gemini-3-flash     Gemini 3 Flash');process.exit(0);}
+assert.equal(args[args.indexOf('--model')+1],'gemini-3-flash');
 assert.equal(args[args.indexOf('--input-format')+1],'stream-json');
 assert.equal(args[args.indexOf('--agent')+1],'zpi-paper-namer');
 assert.ok(!args.includes('--dangerously-skip-permissions'));

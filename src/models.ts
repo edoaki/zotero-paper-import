@@ -4,11 +4,21 @@ import { dirname, delimiter } from 'node:path';
 import { detectCLI, runProcess } from './ai';
 import type { Provider, Settings } from './core';
 
-export interface ModelOption { value: string; label: string }
+export interface ModelOption { value: string; label: string; balanced?: boolean }
 export function defaultModels(provider: Provider): ModelOption[] {
-  const auto = { value: '', label: provider === 'codex' ? '自動（Codexの標準モデル）' : '自動（CLIの既定モデル）' };
-  if (provider === 'claude') return [auto, { value: 'sonnet', label: 'Sonnet（標準）' }, { value: 'opus', label: 'Opus（高性能）' }, { value: 'haiku', label: 'Haiku（高速）' }];
-  return [auto];
+  if (provider === 'claude') return [{ value: '', label: 'Sonnet（標準）' }, { value: 'sonnet', label: 'Sonnet' }, { value: 'opus', label: 'Opus' }, { value: 'haiku', label: 'Haiku' }];
+  return [{ value: '', label: 'モデル一覧を取得中…' }];
+}
+export function standardModel(models: ModelOption[], provider: Provider): ModelOption | undefined {
+  // Resolve a tier from the current catalog, never the CLI's potentially expensive default.
+  const tier = (m: ModelOption) => /(?:^|[-_. ])(?:astra|opus|pro|max)(?:$|[-_. ])/i.test(m.value + ' ' + m.label) ? 0 : provider === 'codex'
+    ? /(?:^|[-_. ])terra(?:$|[-_. ])/i.test(m.value + ' ' + m.label) ? 2 : m.balanced ? 1 : 0
+    : /sonnet|flash(?![- ]?lite)/i.test(m.value + ' ' + m.label) ? 1 : 0;
+  return models.filter(m => m.value && tier(m) > 0).sort((a, b) => tier(b) - tier(a) || b.value.localeCompare(a.value, 'en', { numeric: true }))[0];
+}
+export function modelChoices(models: ModelOption[], provider: Provider): ModelOption[] {
+  const selected = standardModel(models, provider);
+  return [{ value: '', label: selected ? `${selected.label}（標準）` : 'モデルを選択してください' }, ...models];
 }
 export function codexOptions(rows: unknown[]): ModelOption[] {
   return rows.flatMap((value): ModelOption[] => {
@@ -16,7 +26,8 @@ export function codexOptions(rows: unknown[]): ModelOption[] {
     if (!row || row.hidden || typeof row.model !== 'string' || !row.model.trim()) return [];
     if (Array.isArray(row.inputModalities) && !row.inputModalities.includes('text')) return [];
     const name = typeof row.displayName === 'string' ? row.displayName : row.model;
-    return [{ value: row.model, label: name + (row.isDefault ? '（標準）' : '') }];
+    const balanced = typeof row.description === 'string' && /balanced|balance of|mid[- ](?:range|tier)|中程度|バランス/i.test(row.description);
+    return [{ value: row.model, label: name, ...(balanced ? { balanced: true } : {}) }];
   });
 }
 export function openCodeOptions(text: string): ModelOption[] {
@@ -80,9 +91,17 @@ export async function listCodexModels(executable: string, signal?: AbortSignal):
   });
 }
 export async function discoverModels(settings: Settings, signal?: AbortSignal): Promise<ModelOption[]> {
-  const base = defaultModels(settings.provider);
-  if (settings.provider === 'claude') return base;
+  if (settings.provider === 'claude') return defaultModels('claude');
   const executable = await detectCLI(settings.provider, settings.cliPath);
   const models = settings.provider === 'codex' ? await listCodexModels(executable, signal) : (settings.provider === 'antigravity' ? antigravityOptions : openCodeOptions)(await runProcess(executable, ['models'], '', tmpdir(), 20000, signal));
-  return [...base, ...models];
+  return modelChoices(models, settings.provider);
+}
+
+export async function resolveModel(settings: Settings, signal?: AbortSignal): Promise<string> {
+  if (settings.model.trim()) return settings.model.trim();
+  if (settings.provider === 'claude') return 'sonnet';
+  const choices = await discoverModels(settings, signal);
+  const selected = standardModel(choices, settings.provider);
+  if (!selected) throw new Error('中程度の標準モデルを特定できません。設定でモデルを選択してください。');
+  return selected.value;
 }

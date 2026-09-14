@@ -6,6 +6,8 @@ import { METHOD_RULE, parseAI, type Paper, type Settings, type Provider, type Na
 import { ANTIGRAVITY_AGENT, antigravityArguments, antigravityInput, parseAntigravityOutput } from './antigravity';
 import { detectCLI } from './cli';
 export { detectCLI } from './cli';
+import { extractPDF } from './pdf';
+export { extractPDF } from './pdf';
 export function runProcess(executable: string, args: string[], input: string, cwd: string, timeout: number, signal?: AbortSignal, extraEnv: NodeJS.ProcessEnv = {}): Promise<string> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) { reject(new Error('キャンセルしました')); return; }
@@ -33,8 +35,10 @@ export function runProcess(executable: string, args: string[], input: string, cw
 export const NAME_SCHEMA = { type: 'object', properties: { name: { type: ['string', 'null'] }, reason: { type: 'string' }, evidence: { type: 'string' } }, required: ['name', 'reason', 'evidence'], additionalProperties: false };
 export async function invokeAI(settings: Settings, prompt: string, signal?: AbortSignal, schema: unknown = NAME_SCHEMA): Promise<string> {
   const executable = await detectCLI(settings.provider, settings.cliPath);
+  const { resolveModel } = await import('./models');
+  const model = await resolveModel(settings, signal);
   const cwd = await mkdtemp(join(tmpdir(), 'zotero-paper-import-'));
-  const modelArgs = settings.model.trim() ? ['--model', settings.model.trim()] : [];
+  const modelArgs = ['--model', model];
   try {
     let args: string[], env: NodeJS.ProcessEnv = {};
     let input = prompt;
@@ -47,11 +51,11 @@ export async function invokeAI(settings: Settings, prompt: string, signal?: Abor
       const agentDir = join(cwd, '.agents', 'agents', 'zpi-paper-namer');
       await mkdir(agentDir, { recursive: true });
       await writeFile(join(agentDir, 'agent.md'), ANTIGRAVITY_AGENT, { mode: 0o600 });
-      args = antigravityArguments(settings.model, schema, Math.max(15, Math.min(600, settings.timeoutSeconds)));
+      args = antigravityArguments(model, schema, Math.max(15, Math.min(600, settings.timeoutSeconds)));
       input = antigravityInput(prompt);
     } else {
       args = ['run', '--format', 'json', '--agent', 'paper-namer', ...modelArgs];
-      env = { OPENCODE_CONFIG_CONTENT: JSON.stringify({ share: 'disabled', permission: 'deny', agent: { 'paper-namer': { mode: 'primary', description: 'Name a paper from supplied text only', permission: 'deny', prompt: 'Use only the supplied paper. Never use tools. Return JSON only.' } } }) };
+      env = { OPENCODE_CONFIG_CONTENT: JSON.stringify({ share: 'disabled', permission: 'deny', agent: { 'paper-namer': { mode: 'primary', description: 'Translate, name or classify a paper from supplied text only', permission: 'deny', prompt: 'Use only the supplied paper. Never use tools. Follow the supplied translation, naming or classification task. Return JSON only.' } } }) };
     }
     const raw = await runProcess(executable, args, input, cwd, Math.max(15, Math.min(600, settings.timeoutSeconds)) * 1000, signal, env);
     if (settings.provider === 'codex') return await readFile(join(cwd, 'result.json'), 'utf8');
@@ -64,33 +68,6 @@ export async function invokeAI(settings: Settings, prompt: string, signal?: Abor
     const events = raw.trim().split('\n').map(line => { try { return JSON.parse(line); } catch { return null; } });
     return events.filter(e => e?.type === 'text').map(e => e.part?.text || '').join('');
   } finally { await rm(cwd, { recursive: true, force: true }); }
-}
-export async function extractPDF(bytes: Uint8Array, signal?: AbortSignal): Promise<string> {
-  // Bundled fake worker: no separate worker file or Python runtime is required.
-  const worker = await import('pdfjs-dist/legacy/build/pdf.worker.mjs');
-  (globalThis as unknown as { pdfjsWorker: unknown }).pdfjsWorker = worker;
-  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  const task = getDocument({ data: new Uint8Array(bytes), useWorkerFetch: false, useSystemFonts: true });
-  const cancel = () => { void task.destroy(); };
-  signal?.addEventListener('abort', cancel, { once: true });
-  try {
-    const pdf = await task.promise;
-    const sections: string[] = []; let count = 0;
-    const pages = Math.min(pdf.numPages, 200);
-    for (let page = 1; page <= pages; page++) {
-      if (signal?.aborted) throw new Error('キャンセルしました');
-      const p = await pdf.getPage(page);
-      const text = (await p.getTextContent()).items.map(x => 'str' in x ? x.str + (x.hasEOL ? '\n' : ' ') : '').join('');
-      // Reserve text across all pages, so experiment tables near the end are not silently dropped.
-      const allowance = Math.floor(180_000 / pages);
-      sections.push(`[PDF page ${page}${text.length > allowance ? ', excerpt' : ''}]\n${text.slice(0, allowance)}`);
-      count += text.trim().length;
-      p.cleanup();
-    }
-    if (count < 100) return 'PDF text could not be extracted (possibly scanned). No OCR was performed. Do not infer a method name from unread text.';
-    if (pdf.numPages > pages) sections.push(`[Only first ${pages} of ${pdf.numPages} pages extracted.]`);
-    return sections.join('\n\n');
-  } finally { signal?.removeEventListener('abort', cancel); await task.destroy(); }
 }
 export async function nameWithAI(paper: Paper, settings: Settings, pdf: Uint8Array | undefined, signal?: AbortSignal): Promise<NameResult | null> {
   const rule = settings.naming === 'custom' ? settings.rules.find(r => r.id === settings.activeRule)?.prompt : METHOD_RULE;

@@ -1,9 +1,11 @@
 import { App, Modal, Setting, FuzzySuggestModal, TFolder, TFile } from 'obsidian';
-import { authorsOf, yearOf, type ZoteroItem, type Paper, identity } from './core';
+import { authorsOf, yearOf, type ZoteroItem, type Paper, type Settings, identity } from './core';
 import { ZoteroClient } from './zotero';
 import { JOB_LABELS, type SerialQueue, type QueueJob } from './queue';
 import { unimportedPage, type ImportedPapers } from './imported';
 import { remedy } from './problems';
+import { paperPaths } from './layout';
+import { detectCLI } from './cli';
 
 type QueueView = Pick<SerialQueue<unknown>, 'jobs' | 'subscribe' | 'latest'>;
 export function modeTabs(el: HTMLElement, selected: 'import' | 'organize', change: (mode: 'import' | 'organize') => void): void {
@@ -36,13 +38,23 @@ export class PaperPicker extends Modal {
   private hasMore = false;
   private ready = false;
   private exclusions!: HTMLDetailsElement;
-  constructor(app: App, private client: ZoteroClient, private queue: QueueView, private done: (paper: Paper) => void, private openQueue: () => void, private imported: () => Promise<ImportedPapers>, private organize: () => void, private setup: () => void) { super(app); }
+  constructor(app: App, private client: ZoteroClient, private queue: QueueView, private done: (paper: Paper) => void, private openQueue: () => void, private imported: () => Promise<ImportedPapers>, private organize: () => void, private setup: () => void, private settings: Settings) { super(app); }
   async onOpen(): Promise<void> {
     this.closed = false;
     this.setTitle('Zoteroから取り込む');
     this.modalEl.addClass('zpi-modal');
     this.contentEl.addClass('zpi-picker');
     modeTabs(this.contentEl, 'import', () => this.organize());
+    const overview = this.contentEl.createDiv({ cls: 'zpi-overview' });
+    overview.createEl('span', { text: `取り込み先：${paperPaths(this.settings).inbox}`, cls: 'zpi-destination' });
+    const ai = overview.createEl('span', { text: 'AI：確認中', attr: { role: 'status' } });
+    const zotero = overview.createEl('span', { text: 'Zotero：確認中', attr: { role: 'status' } });
+    const settingsButton = overview.createEl('button', { text: '設定' });
+    settingsButton.addEventListener('click', () => { this.close(); this.setup(); });
+    const needsSetup = () => { settingsButton.setText('設定へ'); settingsButton.addClass('mod-cta'); };
+    void detectCLI(this.settings.provider, this.settings.cliPath).then(() => {
+      if (!this.closed) ai.setText('AI：検出済み');
+    }).catch(() => { if (!this.closed) { ai.setText('AI：未検出'); needsSetup(); } });
     let librarySelect!: HTMLSelectElement;
     new Setting(this.contentEl).setName('ライブラリ').addDropdown(drop => {
       drop.addOption('users/0', 'マイライブラリ').onChange(v => { this.library = v; void this.search(); });
@@ -56,15 +68,18 @@ export class PaperPicker extends Modal {
       setTimeout(() => search.inputEl.focus(), 50);
     });
     this.queueSummary = this.contentEl.createDiv({ cls: 'zpi-queue-summary' });
-    new Setting(this.contentEl).setDesc('論文を続けて選べます。画面を閉じても順番に処理します。').addButton(b => b.setButtonText('取り込み状況を見る').onClick(this.openQueue));
+    const queueLink = this.contentEl.createEl('button', { text: '取り込み状況', cls: 'zpi-queue-link' });
+    queueLink.addEventListener('click', this.openQueue);
     this.unsubscribe = this.queue.subscribe(() => this.updateQueue());
     this.updateQueue();
     this.status = this.contentEl.createEl('p', { cls: 'zpi-status' });
     this.results = this.contentEl.createDiv({ cls: 'zpi-results' });
     this.exclusions = this.contentEl.createEl('details', { cls: 'zpi-exclusions' });
-    this.status.setText('Zoteroに接続中…'); this.controller = new AbortController();
+    this.status.setText('Zoteroに接続中…'); this.status.addClass('zpi-loading'); this.controller = new AbortController();
     try {
       await this.client.probe(this.controller.signal);
+      if (this.closed) return;
+      zotero.setText('Zotero：検出済み');
       const libs = await this.client.libraries();
       if (this.closed) return;
       librarySelect.replaceChildren();
@@ -73,15 +88,16 @@ export class PaperPicker extends Modal {
       await this.search();
     } catch (e) {
       if (this.closed) return;
-      this.status.setText((e as Error).message + '\n「整理」タブはZoteroが起動していなくても使えます。');
-      new Setting(this.results).addButton(b => b.setButtonText('接続方法を見る').onClick(this.setup));
+      this.status.removeClass('zpi-loading');
+      zotero.setText('Zotero：未検出'); needsSetup();
+      this.status.setText((e as Error).message);
     }
   }
   private async search(): Promise<void> {
     if (!this.ready || this.closed) return;
     this.controller?.abort(); this.controller = new AbortController();
     const signal = this.controller.signal, generation = ++this.generation;
-    this.status.setText('検索中…');
+    this.status.setText('検索中…'); this.status.addClass('zpi-loading');
     this.results.empty(); this.rowStates.clear();
     try {
       const index = await this.imported();
@@ -92,7 +108,7 @@ export class PaperPicker extends Modal {
       if (generation !== this.generation || signal.aborted) return;
       const items = page.items;
       this.hiddenCount = page.hidden; this.hasMore = page.hasMore;
-      this.exclusions.empty(); this.exclusions.createEl('summary', { text: `取り込み済みで非表示の論文と理由（${page.hidden}件）` });
+      this.exclusions.empty(); this.exclusions.createEl('summary', { text: `取り込み済み（${page.hidden}件）` });
       for (const item of page.hiddenItems) {
         const match = index.match({ item, library: this.library, serverId: this.client.serverId });
         const card = this.exclusions.createDiv({ cls: 'zpi-job' }); card.createEl('strong', { text: item.data.title || item.key }); card.createEl('p', { text: match?.reason || '取り込み済み', cls: 'zpi-meta' });
@@ -118,16 +134,20 @@ export class PaperPicker extends Modal {
           const row = rows[cursor++];
           try {
             const pdfs = await this.client.attachments(row.paper, signal);
-            if (!signal.aborted) row.state.setText(pdfs.length ? `PDF添付：${pdfs.length}件（ダウンロード済みかは取り込み時に確認します）` : 'PDF添付なし');
+            if (!signal.aborted) row.state.setText(pdfs.length ? `PDF ${pdfs.length}件` : 'PDF添付なし');
           } catch { if (!signal.aborted) row.state.setText('PDF状態未確認'); }
         }
       }));
     } catch (e) { if (!signal.aborted) this.status.setText((e as Error).message); }
+    finally { if (!this.closed && generation === this.generation) this.status.removeClass('zpi-loading'); }
   }
   private updateQueue(): void {
     const running = this.queue.jobs.find(j => j.state === 'running');
     const count = this.queue.jobs.filter(j => j.state === 'queued').length;
-    this.queueSummary.setText(running ? `処理中：${running.title} — ${running.progress}　／　待機中：${count}件` : count ? `待機中：${count}件` : '論文を選ぶと待ち行列に追加されます');
+    this.queueSummary.setText(running ? `処理中：${running.title} — ${running.progress}　／　待機中：${count}件` : count ? `待機中：${count}件` : '');
+    this.queueSummary.hidden = !running && !count;
+    this.queueSummary.classList.toggle('zpi-loading', !!running);
+    this.queueSummary.setAttribute('role', 'status');
     for (const [key, row] of this.rowStates) {
       const job = this.queue.latest(key);
       if (job?.state === 'completed' && job.path && this.app.vault.getAbstractFileByPath(job.path)) {
@@ -137,12 +157,12 @@ export class PaperPicker extends Modal {
         new Setting(card).setDesc(job.path).addButton(b => b.setButtonText('既存ノートを開く').onClick(() => { const file = this.app.vault.getAbstractFileByPath(job.path!); if (file instanceof TFile) { this.close(); void this.app.workspace.getLeaf(false).openFile(file); } }));
         row.button.remove(); this.rowStates.delete(key); this.hiddenCount++; continue;
       }
-      row.state.setText(job ? `${JOB_LABELS[job.state]}${job.state === 'running' ? '：' + job.progress : ''}` : 'クリックして取り込む');
+      row.state.setText(job ? `${JOB_LABELS[job.state]}${job.state === 'running' ? '：' + job.progress : ''}` : '取り込む →');
       row.state.dataset.state = job?.state || 'new';
       row.button.disabled = !!job && ['queued', 'running', 'needs-input'].includes(job.state);
     }
-    if (this.status && this.results) this.status.setText(`未取り込み：${this.rowStates.size}件${this.hasMore ? '（続きは検索で絞り込めます）' : ''}。取り込み済み${this.hiddenCount}件は非表示です。`);
-    this.exclusions?.querySelector('summary')?.setText(`取り込み済みで非表示の論文と理由（${this.hiddenCount}件）`);
+    if (this.status && this.results) this.status.setText(`未取り込み ${this.rowStates.size}件${this.hasMore ? '（検索で絞り込み）' : ''}`);
+    this.exclusions?.querySelector('summary')?.setText(`取り込み済み（${this.hiddenCount}件）`);
   }
   onClose(): void { this.closed = true; this.controller?.abort(); clearTimeout(this.timer); this.unsubscribe?.(); this.contentEl.empty(); }
 }

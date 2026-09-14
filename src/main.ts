@@ -11,6 +11,8 @@ import { Organizer, organizePaths, parseClassification, CLASSIFICATION_SCHEMA, O
 import { OrganizationStore } from './organization-store';
 import { OrganizePicker, OrganizationHistoryModal } from './organization-ui';
 import { KeyCompletionModal } from './key-ui';
+import { translateAbstract } from './abstract';
+import { PluginUpdater } from './update-ui';
 import { migrateLayout, paperPaths, literatureFolders } from './layout';
 
 export interface ImportTask {
@@ -24,6 +26,7 @@ function isImportTask(task: Task): task is ImportTask { return ['import','refres
 
 export default class ZoteroPaperImport extends Plugin {
   declare settings: Settings;
+  updater = new PluginUpdater(this);
   store!: VaultStorage;
   importer!: Importer;
   queue!: SerialQueue<Task>;
@@ -124,7 +127,7 @@ export default class ZoteroPaperImport extends Plugin {
     try { validateFolder(this.settings.folder); } catch { this.openSettings(); new Notice('最初に保存先を指定してください'); return; }
     const client = this.client();
     this.picker?.close(); this.organizePicker?.close(); this.keyModal?.close();
-    this.picker = new PaperPicker(this.app, client, this.queue, paper => this.enqueuePaper(paper), () => this.openQueue(), () => this.store.importedPapers(literatureFolders(this.settings)), () => this.openOrganizePicker(), () => this.showSetup());
+    this.picker = new PaperPicker(this.app, client, this.queue, paper => this.enqueuePaper(paper), () => this.openQueue(), () => this.store.importedPapers(literatureFolders(this.settings)), () => this.openOrganizePicker(), () => this.openSettings(), { ...this.settings });
     this.picker.open();
   }
   private async collectPDFs(client: ZoteroClient, paper: Paper, progress: JobProgress, task: ImportTask, tracked?: StoredNote): Promise<{ pdfs: PDFInput[]; reason: string }> {
@@ -169,6 +172,7 @@ export default class ZoteroPaperImport extends Plugin {
     try {
       validateFolder(this.settings.folder);
       this.queue.add('import:' + identity(paper), paper.item.data.title || 'タイトル未設定', { kind: 'import', paper, settings: this.settings });
+      new Notice('取り込みを受け付けました。画面を閉じても処理を続けます。');
     } catch (e) { this.showError(e); }
   }
   openQueue(): void {
@@ -247,6 +251,9 @@ export default class ZoteroPaperImport extends Plugin {
       name = await this.naming(paper, result.pdfs, progress, settings) || undefined;
       if (!name || progress.controller.signal.aborted) throw new Error('キャンセルしました');
     }
+    if (settings.translateAbstract !== false && paper.item.data.abstractNote?.trim()) progress.update('要旨を日本語に翻訳中…');
+    paper.abstractTranslation = await translateAbstract(paper.item.data.abstractNote, settings, note?.record.abstractTranslation, progress.controller.signal, invokeAI);
+    if (progress.controller.signal.aborted) throw new Error('キャンセルしました');
     progress.update('保存・検証中…'); progress.commit();
     let path: string;
     if (task.kind === 'import') {
